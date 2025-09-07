@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cal Poly AuditEngine</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --cal-poly-blue: #003366;
+            --cal-poly-gold: #FFD700;
+        }
+        
+        .navbar-brand {
+            color: var(--cal-poly-blue) !important;
+            font-weight: bold;
+        }
+        
+        .btn-primary {
+            background-color: var(--cal-poly-blue);
+            border-color: var(--cal-poly-blue);
+        }
+        
+        .btn-primary:hover {
+            background-color: #002244;
+            border-color: #002244;
+        }
+        
+        .card-header {
+            background-color: var(--cal-poly-blue);
+            color: white;
+        }
+        
+        .progress-step {
+            background-color: #f8f9fa;
+            border: 2px solid #dee2e6;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .progress-step.active {
+            border-color: var(--cal-poly-blue);
+            background-color: #f0f8ff;
+        }
+        
+        .progress-step.completed {
+            border-color: #28a745;
+            background-color: #f0fff0;
+        }
+        
+        .metric-card {
+            background: linear-gradient(135deg, var(--cal-poly-blue), #004488);
+            color: white;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 2rem;
+            font-weight: bold;
+        }
+        
+        .observation-card {
+            border-left: 4px solid var(--cal-poly-blue);
+            margin-bottom: 20px;
+        }
+        
+        .task-item {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-left: 3px solid #007bff;
+        }
+        
+        .loading-spinner {
+            display: none;
+        }
+        
+        .table-responsive {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        
+        .severity-high {
+            background-color: #ffe6e6 !important;
+        }
+        
+        .severity-medium {
+            background-color: #fff4e6 !important;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-chart-line me-2"></i>
+                Cal Poly AuditEngine
+            </a>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <h1 class="mb-4">Transform audit reports into actionable tracking matrices with AI assistance</h1>
+            </div>
+        </div>
+
+        <!-- Step 1: Upload -->
+        <div id="step1" class="progress-step active">
+            <h3><i class="fas fa-upload me-2"></i>Step 1: Upload Audit Report</h3>
+            <p>Upload your audit report PDF. The system will extract observations and management responses directly from the document.</p>
+            
+            <div class="row">
+                <div class="col-md-8">
+                    <div class="mb-3">
+                        <input type="file" class="form-control" id="pdfFile" accept=".pdf">
+                    </div>
+                    <button type="button" class="btn btn-primary btn-lg" id="uploadBtn">
+                        <i class="fas fa-file-upload me-2"></i>Extract Observations & Management Responses
+                    </button>
+                </div>
+                <div class="col-md-4">
+                    <div class="loading-spinner" id="uploadSpinner">
+                        <div class="d-flex align-items-center">
+                            <div class="spinner-border text-primary me-3" role="status"></div>
+                            <div>
+                                <div>Processing PDF...</div>
+                                <small class="text-muted">This may take a few minutes</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Review -->
+        <div id="step2" class="progress-step" style="display: none;">
+            <h3><i class="fas fa-edit me-2"></i>Step 2: Review & Edit Extracted Information</h3>
+            <p>Review the extracted information. The system has preserved the verbatim management responses and suggested task breakdowns.</p>
+            
+            <div class="row mb-3" id="metricsRow">
+                <div class="col-md-4">
+                    <div class="metric-card">
+                        <div class="metric-value" id="observationsCount">0</div>
+                        <div>Observations</div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="metric-card">
+                        <div class="metric-value" id="tasksCount">0</div>
+                        <div>Total Tasks</div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="metric-card">
+                        <div class="metric-value" id="avgTasks">0</div>
+                        <div>Avg Tasks/Observation</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="observationsContainer"></div>
+
+            <button type="button" class="btn btn-primary btn-lg" id="generateMatrixBtn">
+                <i class="fas fa-table me-2"></i>Generate Evidence Request Matrix
+            </button>
+        </div>
+
+        <!-- Step 3: Matrix -->
+        <div id="step3" class="progress-step" style="display: none;">
+            <h3><i class="fas fa-table me-2"></i>Step 3: Review and Export Matrix</h3>
+            
+            <div class="row mb-3" id="matrixMetrics">
+                <div class="col-md-3">
+                    <div class="metric-card">
+                        <div class="metric-value" id="totalRows">0</div>
+                        <div>Total Rows</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-card">
+                        <div class="metric-value" id="uniqueObs">0</div>
+                        <div>Observations</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-card">
+                        <div class="metric-value" id="sigIssues">0</div>
+                        <div>Significant Issues</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-card">
+                        <div class="metric-value" id="collabRequired">0</div>
+                        <div>Requiring Collaboration</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-responsive mb-4">
+                <table class="table table-striped table-hover" id="matrixTable">
+                    <thead class="table-dark"></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="auditTitle" class="form-label">Audit Title for Export</label>
+                        <input type="text" class="form-control" id="auditTitle" value="Audit Evidence Request Matrix">
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <button type="button" class="btn btn-success btn-lg w-100" id="exportBtn">
+                        <i class="fas fa-download me-2"></i>Generate Excel File
+                    </button>
+                </div>
+                <div class="col-md-6">
+                    <button type="button" class="btn btn-secondary btn-lg w-100" id="resetBtn">
+                        <i class="fas fa-refresh me-2"></i>Start New Analysis
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="toast" class="toast" role="alert">
+            <div class="toast-header">
+                <strong class="me-auto">AuditEngine</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+            </div>
+            <div class="toast-body"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentObservationsWithTasks = [];
+        
+        // Toast helper
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            const toastBody = toast.querySelector('.toast-body');
+            toastBody.textContent = message;
+            
+            toast.className = `toast bg-${type === 'error' ? 'danger' : type === 'success' ? 'success' : 'info'} text-white`;
+            
+            const bsToast = new bootstrap.Toast(toast);
+            bsToast.show();
+        }
+
+        // Step navigation
+        function showStep(stepNum) {
+            document.querySelectorAll('.progress-step').forEach(step => {
+                step.style.display = 'none';
+                step.classList.remove('active');
+            });
+            
+            const currentStep = document.getElementById(`step${stepNum}`);
+            currentStep.style.display = 'block';
+            currentStep.classList.add('active');
+            
+            // Mark previous steps as completed
+            for (let i = 1; i < stepNum; i++) {
+                document.getElementById(`step${i}`).classList.add('completed');
+            }
+        }
+
+        // Upload handler
+        document.getElementById('uploadBtn').addEventListener('click', async function() {
+            const fileInput = document.getElementById('pdfFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showToast('Please select a PDF file', 'error');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            document.getElementById('uploadSpinner').style.display = 'block';
+            this.disabled = true;
+            
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showToast(`Extracted ${result.observations_count} observations`, 'success');
+                    await processTasksAndShowStep2(result.observations);
+                } else {
+                    showToast(result.error, 'error');
+                }
+            } catch (error) {
+                showToast('Error uploading file: ' + error.message, 'error');
+            } finally {
+                document.getElementById('uploadSpinner').style.display = 'none';
+                this.disabled = false;
+            }
+        });
+
+        async function processTasksAndShowStep2(observations) {
+            try {
+                const response = await fetch('/process_tasks', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    currentObservationsWithTasks = result.observations_with_tasks;
+                    displayObservationsForReview(result.observations_with_tasks);
+                    showStep(2);
+                } else {
+                    showToast(result.error, 'error');
+                }
+            } catch (error) {
+                showToast('Error processing tasks: ' + error.message, 'error');
+            }
+        }
+
+        function displayObservationsForReview(observationsWithTasks) {
+            const container = document.getElementById('observationsContainer');
+            container.innerHTML = '';
+            
+            let totalTasks = 0;
+            
+            observationsWithTasks.forEach((item, obsIdx) => {
+                const [observation, tasks] = item;
+                totalTasks += tasks.length;
+                
+                const obsCard = document.createElement('div');
+                obsCard.className = 'card observation-card mb-4';
+                obsCard.innerHTML = `
+                    <div class="card-header">
+                        <h5 class="mb-0">Observation ${obsIdx + 1}: ${observation.observation_title || 'Unnamed'}</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            <textarea class="form-control" rows="3" readonly>${observation.observation_description || ''}</textarea>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Severity Rating</label>
+                            <select class="form-select" data-obs="${obsIdx}" data-field="severity">
+                                <option value="Significant Issue" ${observation.severity === 'Significant Issue' ? 'selected' : ''}>Significant Issue</option>
+                                <option value="Observation for Improvement" ${observation.severity === 'Observation for Improvement' ? 'selected' : ''}>Observation for Improvement</option>
+                            </select>
+                        </div>
+                        
+                        <h6>Management Response Tasks</h6>
+                        <p class="text-muted">Below are the verbatim excerpts from the management response, split into trackable tasks:</p>
+                        
+                        <div id="tasks-${obsIdx}">
+                            ${tasks.map((task, taskIdx) => createTaskHTML(task, obsIdx, taskIdx)).join('')}
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(obsCard);
+            });
+            
+            // Update metrics
+            document.getElementById('observationsCount').textContent = observationsWithTasks.length;
+            document.getElementById('tasksCount').textContent = totalTasks;
+            document.getElementById('avgTasks').textContent = (totalTasks / observationsWithTasks.length).toFixed(1);
+        }
+
+        function createTaskHTML(task, obsIdx, taskIdx) {
+            const stepLetter = String.fromCharCode(65 + taskIdx);
+            
+            return `
+                <div class="task-item">
+                    <h6>Task ${stepLetter} (Step ${obsIdx + 1}${stepLetter})</h6>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Management Response Text (Verbatim)</label>
+                        <textarea class="form-control" rows="4" readonly>${task.task_text || ''}</textarea>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Department(s) Responsible</label>
+                                <input type="text" class="form-control" value="${task.inferred_department || ''}" 
+                                       data-obs="${obsIdx}" data-task="${taskIdx}" data-field="inferred_department">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Implementation Type</label>
+                                <select class="form-select" data-obs="${obsIdx}" data-task="${taskIdx}" data-field="implementation_type">
+                                    <option value="Process Improvement" ${task.implementation_type === 'Process Improvement' ? 'selected' : ''}>Process Improvement</option>
+                                    <option value="Policy Change" ${task.implementation_type === 'Policy Change' ? 'selected' : ''}>Policy Change</option>
+                                    <option value="Process Assessment/Evaluation" ${task.implementation_type === 'Process Assessment/Evaluation' ? 'selected' : ''}>Process Assessment/Evaluation</option>
+                                    <option value="New Process Implementation" ${task.implementation_type === 'New Process Implementation' ? 'selected' : ''}>New Process Implementation</option>
+                                    <option value="Communication/Reinforcement" ${task.implementation_type === 'Communication/Reinforcement' ? 'selected' : ''}>Communication/Reinforcement</option>
+                                    <option value="Remediation" ${task.implementation_type === 'Remediation' ? 'selected' : ''}>Remediation</option>
+                                    <option value="Other" ${task.implementation_type === 'Other' ? 'selected' : ''}>Other</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Contact Person</label>
+                                <input type="text" class="form-control" placeholder="Enter name/title" 
+                                       data-obs="${obsIdx}" data-task="${taskIdx}" data-field="contact">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" ${task.requires_collaboration ? 'checked' : ''}
+                                           data-obs="${obsIdx}" data-task="${taskIdx}" data-field="requires_collaboration">
+                                    <label class="form-check-label">Department Collaboration Required?</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">Division</label>
+                                <select class="form-select" data-obs="${obsIdx}" data-task="${taskIdx}" data-field="inferred_division">
+                                    <option value="">Select Division</option>
+                                    <option value="Academic Affairs" ${task.inferred_division === 'Academic Affairs' ? 'selected' : ''}>Academic Affairs</option>
+                                    <option value="Administration and Finance" ${task.inferred_division === 'Administration and Finance' ? 'selected' : ''}>Administration and Finance</option>
+                                    <option value="Information Technology Services" ${task.inferred_division === 'Information Technology Services' ? 'selected' : ''}>Information Technology Services</option>
+                                    <option value="Research" ${task.inferred_division === 'Research' ? 'selected' : ''}>Research</option>
+                                    <option value="Strategic Enrollment Management" ${task.inferred_division === 'Strategic Enrollment Management' ? 'selected' : ''}>Strategic Enrollment Management</option>
+                                    <option value="Student Affairs" ${task.inferred_division === 'Student Affairs' ? 'selected' : ''}>Student Affairs</option>
+                                    <option value="University Communications and Marketing" ${task.inferred_division === 'University Communications and Marketing' ? 'selected' : ''}>University Communications and Marketing</option>
+                                    <option value="University Development and Alumni Engagement" ${task.inferred_division === 'University Development and Alumni Engagement' ? 'selected' : ''}>University Development and Alumni Engagement</option>
+                                    <option value="University Office of Diversity and Inclusion" ${task.inferred_division === 'University Office of Diversity and Inclusion' ? 'selected' : ''}>University Office of Diversity and Inclusion</option>
+                                    <option value="University Personnel" ${task.inferred_division === 'University Personnel' ? 'selected' : ''}>University Personnel</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">Target Completion Date</label>
+                                <input type="date" class="form-control" 
+                                       data-obs="${obsIdx}" data-task="${taskIdx}" data-field="due_date">
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <label class="form-label">Quick dates:</label>
+                            <div class="btn-group w-100" role="group">
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setQuickDate(${obsIdx}, ${taskIdx}, 30)">30d</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setQuickDate(${obsIdx}, ${taskIdx}, 60)">60d</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setQuickDate(${obsIdx}, ${taskIdx}, 90)">90d</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function setQuickDate(obsIdx, taskIdx, days) {
+            const today = new Date();
+            today.setDate(today.getDate() + days);
+            const dateStr = today.toISOString().split('T')[0];
+            
+            const dateInput = document.querySelector(`[data-obs="${obsIdx}"][data-task="${taskIdx}"][data-field="due_date"]`);
+            dateInput.value = dateStr;
+        }
+
+        // Generate matrix handler
+        document.getElementById('generateMatrixBtn').addEventListener('click', async function() {
+            // Collect all edited data
+            const editedData = collectEditedData();
+            
+            this.disabled = true;
+            
+            try {
+                const response = await fetch('/generate_matrix', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        observations_with_tasks: editedData
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const text = await response.text();
+                    console.error('Non-JSON response received:', text);
+                    throw new Error(`Expected JSON response, got: ${text.substring(0, 100)}...`);
+                }
+                
+                // Get raw response text for logging
+                const responseText = await response.text();
+                console.log('Raw response text:', responseText);
+                console.log('Response length:', responseText.length);
+                
+                // Log each line with line numbers for debugging
+                const lines = responseText.split('\n');
+                lines.forEach((line, index) => {
+                    console.log(`Line ${index + 1}: ${line}`);
+                });
+                
+                // Try to parse JSON
+                let result;
+                try {
+                    result = JSON.parse(responseText);
+                    console.log('JSON parsed successfully:', result);
+                } catch (jsonError) {
+                    console.error('JSON parse error:', jsonError);
+                    console.error('Full error message:', jsonError.message);
+                    console.error('Error at line 43, column 24:');
+                    
+                    // Log the problematic area in detail
+                    if (lines[42]) {
+                        console.error('Line 43 content:', lines[42]);
+                        console.error('Line 43 length:', lines[42].length);
+                        console.error('Character at column 24:', lines[42].charAt(23));
+                        console.error('Character code at column 24:', lines[42].charCodeAt(23));
+                        console.error('Characters around column 24:', lines[42].substring(20, 30));
+                        
+                        // Show hex dump of problematic area
+                        const problemArea = lines[42].substring(20, 30);
+                        let hexDump = '';
+                        for (let i = 0; i < problemArea.length; i++) {
+                            hexDump += problemArea.charCodeAt(i).toString(16).padStart(2, '0') + ' ';
+                        }
+                        console.error('Hex dump of problem area:', hexDump);
+                    }
+                    
+                    // Log response headers and status
+                    console.error('Response status:', response.status);
+                    console.error('Response headers:', [...response.headers.entries()]);
+                    
+                    // Save raw response to file for inspection
+                    const blob = new Blob([responseText], { type: 'text/plain' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `debug_response_${new Date().getTime()}.txt`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    console.log('Raw response saved to download folder for inspection');
+                    
+                    throw new Error(`JSON parsing failed: ${jsonError.message}`);
+                }
+                
+                if (result.success) {
+                    displayMatrix(result.matrix, result.metrics);
+                    showStep(3);
+                    showToast('Matrix generated successfully!', 'success');
+                } else {
+                    showToast(result.error || 'Unknown error occurred', 'error');
+                }
+            } catch (error) {
+                console.error('Matrix generation error:', error);
+                showToast('Error generating matrix: ' + error.message, 'error');
+            } finally {
+                this.disabled = false;
+            }
+        });
+
+        function collectEditedData() {
+            const editedObservationsWithTasks = [];
+            
+            try {
+                currentObservationsWithTasks.forEach((item, obsIdx) => {
+                    const [observation, tasks] = item;
+                    
+                    // Get edited observation data
+                    const severitySelect = document.querySelector(`[data-obs="${obsIdx}"][data-field="severity"]`);
+                    const editedObservation = {
+                        ...observation,
+                        severity: severitySelect ? severitySelect.value : observation.severity
+                    };
+                    
+                    // Get edited tasks data
+                    const editedTasks = tasks.map((task, taskIdx) => {
+                        const editedTask = { ...task };
+                        
+                        // Collect all form fields for this task
+                        const fields = ['inferred_department', 'implementation_type', 'contact', 'inferred_division', 'due_date'];
+                        fields.forEach(field => {
+                            const element = document.querySelector(`[data-obs="${obsIdx}"][data-task="${taskIdx}"][data-field="${field}"]`);
+                            if (element) {
+                                editedTask[field] = element.value || '';
+                            }
+                        });
+                        
+                        // Handle checkbox
+                        const collabCheckbox = document.querySelector(`[data-obs="${obsIdx}"][data-task="${taskIdx}"][data-field="requires_collaboration"]`);
+                        if (collabCheckbox) {
+                            editedTask.requires_collaboration = collabCheckbox.checked;
+                        }
+                        
+                        // Ensure all required fields exist with safe defaults
+                        editedTask.inferred_vp = editedTask.inferred_vp || '';
+                        editedTask.inferred_cabinet_member = editedTask.inferred_cabinet_member || '';
+                        editedTask.inferred_division = editedTask.inferred_division || '';
+                        
+                        return editedTask;
+                    });
+                    
+                    editedObservationsWithTasks.push([editedObservation, editedTasks]);
+                });
+                
+                console.log('Collected data:', editedObservationsWithTasks);
+                return editedObservationsWithTasks;
+                
+            } catch (error) {
+                console.error('Error collecting edited data:', error);
+                showToast('Error collecting form data: ' + error.message, 'error');
+                return [];
+            }
+        }
+
+        function displayMatrix(matrix, metrics) {
+            // Update metrics
+            document.getElementById('totalRows').textContent = metrics.total_rows;
+            document.getElementById('uniqueObs').textContent = metrics.observations;
+            document.getElementById('sigIssues').textContent = metrics.significant_issues;
+            document.getElementById('collabRequired').textContent = metrics.collaboration_required;
+            
+            // Create table
+            const table = document.getElementById('matrixTable');
+            const thead = table.querySelector('thead');
+            const tbody = table.querySelector('tbody');
+            
+            // Clear existing content
+            thead.innerHTML = '';
+            tbody.innerHTML = '';
+            
+            if (matrix.length > 0) {
+                // Create header
+                const headerRow = document.createElement('tr');
+                Object.keys(matrix[0]).forEach(key => {
+                    const th = document.createElement('th');
+                    th.textContent = key;
+                    th.style.whiteSpace = 'nowrap';
+                    headerRow.appendChild(th);
+                });
+                thead.appendChild(headerRow);
+                
+                // Create rows
+                matrix.forEach(row => {
+                    const tr = document.createElement('tr');
+                    
+                    Object.values(row).forEach((value, idx) => {
+                        const td = document.createElement('td');
+                        td.textContent = value || '';
+                        
+                        // Apply severity styling
+                        if (idx === 4 || idx === 5) { // Severity columns
+                            if (value === 'Significant Issue') {
+                                td.classList.add('severity-high');
+                            } else if (value === 'Observation for Improvement') {
+                                td.classList.add('severity-medium');
+                            }
+                        }
+                        
+                        tr.appendChild(td);
+                    });
+                    
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        // Export handler
+        document.getElementById('exportBtn').addEventListener('click', async function() {
+            const auditTitle = document.getElementById('auditTitle').value;
+            
+            this.disabled = true;
+            
+            try {
+                const response = await fetch('/export_excel', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        audit_title: auditTitle
+                    })
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${auditTitle.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 16).replace(/[-:]/g, '')}.xlsx`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    showToast('Excel file downloaded successfully!', 'success');
+                } else {
+                    const result = await response.json();
+                    showToast(result.error, 'error');
+                }
+            } catch (error) {
+                showToast('Error exporting Excel: ' + error.message, 'error');
+            } finally {
+                this.disabled = false;
+            }
+        });
+
+        // Reset handler
+        document.getElementById('resetBtn').addEventListener('click', async function() {
+            if (confirm('Are you sure you want to start a new analysis? This will clear all current data.')) {
+                try {
+                    await fetch('/reset', { method: 'POST' });
+                    location.reload();
+                } catch (error) {
+                    showToast('Error resetting: ' + error.message, 'error');
+                }
+            }
+        });
+    </script>
+</body>
+</html>
