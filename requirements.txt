@@ -6,3 +6,6 @@ PyPDF2==3.0.1
 pydantic==2.5.0
 instructor==1.0.0
 xlsxwriter==3.1.9
+colorama==0.4.6
+anthropic==0.25.0
+openai==1.12.0
