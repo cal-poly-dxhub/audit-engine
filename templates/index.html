@@ -1102,6 +1102,14 @@
             currentObservationsWithTasks[obsIdx] = [observation, tasks];
             displayObservationsForReview(currentObservationsWithTasks);
             showToast('Task added successfully', 'success');
+            
+            // Log task operation
+            logInteraction('task_operation', {
+                operation: 'add',
+                obs_idx: obsIdx,
+                task_indices: [position],
+                details: { position: position }
+            });
         }
 
         function deleteTask(obsIdx, taskIdx) {
@@ -1117,6 +1125,13 @@
                 currentObservationsWithTasks[obsIdx] = [observation, tasks];
                 displayObservationsForReview(currentObservationsWithTasks);
                 showToast('Task deleted successfully', 'success');
+                
+                // Log task operation
+                logInteraction('task_operation', {
+                    operation: 'delete',
+                    obs_idx: obsIdx,
+                    task_indices: [taskIdx]
+                });
             }
         }
 
@@ -1128,6 +1143,13 @@
             currentObservationsWithTasks[obsIdx] = [observation, tasks];
             displayObservationsForReview(currentObservationsWithTasks);
             showToast('Task moved up', 'success');
+            
+            // Log task operation
+            logInteraction('task_operation', {
+                operation: 'move_up',
+                obs_idx: obsIdx,
+                task_indices: [taskIdx, taskIdx - 1]
+            });
         }
 
         function moveTaskDown(obsIdx, taskIdx) {
@@ -1138,6 +1160,13 @@
             currentObservationsWithTasks[obsIdx] = [observation, tasks];
             displayObservationsForReview(currentObservationsWithTasks);
             showToast('Task moved down', 'success');
+            
+            // Log task operation
+            logInteraction('task_operation', {
+                operation: 'move_down',
+                obs_idx: obsIdx,
+                task_indices: [taskIdx, taskIdx + 1]
+            });
         }
 
         function toggleCompactView(obsIdx) {
@@ -1291,6 +1320,38 @@
             document.getElementById('nlCommand').value = example;
             document.getElementById('nlCommand').focus();
         }
+
+        // Logging functions
+        function logInteraction(type, data) {
+            fetch('/log_interaction', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    type: type,
+                    ...data
+                })
+            }).catch(error => console.log('Logging error:', error));
+        }
+
+        // Add event listeners for form changes
+        document.addEventListener('change', function(e) {
+            if (e.target.hasAttribute('data-obs') && e.target.hasAttribute('data-field')) {
+                const obsIdx = parseInt(e.target.getAttribute('data-obs'));
+                const taskIdx = e.target.hasAttribute('data-task') ? parseInt(e.target.getAttribute('data-task')) : null;
+                const field = e.target.getAttribute('data-field');
+                
+                logInteraction('manual_edit', {
+                    edit_type: 'field_change',
+                    obs_idx: obsIdx,
+                    task_idx: taskIdx,
+                    field: field,
+                    old_value: e.target.defaultValue || '',
+                    new_value: e.target.value
+                });
+            }
+        });
     </script>
 </body>
 </html>

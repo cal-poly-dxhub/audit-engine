@@ -16,6 +16,7 @@ import os
 import uuid
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
+from interaction_logger import interaction_logger
 
 # Load environment variables
 load_dotenv()
@@ -78,6 +79,38 @@ app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 # Progress tracking
 current_progress = {"message": "Ready"}
 
+@app.route('/log_interaction', methods=['POST'])
+def log_interaction():
+    """Endpoint for frontend to log user interactions"""
+    try:
+        data = request.json
+        session_id = session.get('session_id', 'unknown')
+        
+        interaction_type = data.get('type')
+        
+        if interaction_type == 'manual_edit':
+            interaction_logger.log_manual_edit(
+                session_id,
+                data.get('edit_type', 'field_change'),
+                data.get('obs_idx'),
+                data.get('task_idx'),
+                data.get('field'),
+                data.get('old_value'),
+                data.get('new_value')
+            )
+        elif interaction_type == 'task_operation':
+            interaction_logger.log_task_operation(
+                session_id,
+                data.get('operation'),
+                data.get('obs_idx'),
+                data.get('task_indices', []),
+                data.get('details')
+            )
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/progress')
 def get_progress():
     return jsonify(current_progress)
@@ -86,7 +119,17 @@ def get_progress():
 def process_nl_command():
     global current_progress
     from datetime import datetime
+    ai_start_time = time.time()
+    session_id = session.get('session_id', 'unknown')
+    
     log_request('/process_nl_command', 'POST')
+    
+    try:
+        data = request.json
+        command = data.get('command', '')
+        observations_with_tasks = data.get('observations_with_tasks', [])
+        
+        current_progress["message"] = "Processing natural language command..."
     
     try:
         data = request.json
@@ -178,25 +221,37 @@ Current date for calculations: {datetime.now().strftime('%Y-%m-%d')}
                 
                 # Check if AI returned an error
                 if 'error' in parsed_command:
+                    processing_time = time.time() - ai_start_time
                     current_progress["message"] = "Ready"
+                    interaction_logger.log_ai_command(session_id, command, processing_time, 0, False, parsed_command['error'])
                     return jsonify({'error': parsed_command['error']}), 400
                 
+                processing_time = time.time() - ai_start_time
+                changes_count = len(parsed_command.get('changes', []))
                 current_progress["message"] = "Ready"
+                interaction_logger.log_ai_command(session_id, command, processing_time, changes_count, True)
+                
                 return jsonify({
                     'success': True,
                     'changes': parsed_command.get('changes', []),
                     'summary': parsed_command.get('summary', 'Applied changes')
                 })
             else:
+                processing_time = time.time() - ai_start_time
                 current_progress["message"] = "Ready"
+                interaction_logger.log_ai_command(session_id, command, processing_time, 0, False, "Could not find JSON in AI response")
                 return jsonify({'error': 'Could not find JSON in AI response'}), 400
         except json.JSONDecodeError as json_error:
+            processing_time = time.time() - ai_start_time
             current_progress["message"] = "Ready"
+            interaction_logger.log_ai_command(session_id, command, processing_time, 0, False, f"JSON parse error: {str(json_error)}")
             return jsonify({'error': f'Could not parse AI response: {str(json_error)}'}), 400
             
     except Exception as e:
+        processing_time = time.time() - ai_start_time
         current_progress["message"] = "Ready"
         log_step("NL_COMMAND", "ERROR", f"Exception: {str(e)}")
+        interaction_logger.log_ai_command(session_id, command, processing_time, 0, False, str(e))
         return jsonify({'error': f'Error processing command: {str(e)}'}), 500
 
 # In-memory storage to avoid session size limits
@@ -846,11 +901,24 @@ matrix_generator = AuditTrackingMatrix()
 
 @app.route('/')
 def index():
+    # Create or get session ID
+    if 'session_id' not in session:
+        session['session_id'] = str(uuid.uuid4())
+        session['session_start'] = time.time()
+        
+        # Log session start
+        user_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+        user_agent = request.headers.get('User-Agent', '')
+        interaction_logger.log_session_start(session['session_id'], user_ip, user_agent)
+    
     return render_template('index.html')
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
     global current_progress
+    upload_start_time = time.time()
+    session_id = session.get('session_id', 'unknown')
+    
     log_request('/upload', 'POST')
     log_step("FILE_UPLOAD", "START", "Processing file upload request")
     current_progress["message"] = "Validating file..."
@@ -858,16 +926,19 @@ def upload_file():
     if 'file' not in request.files:
         log_step("FILE_UPLOAD", "ERROR", "No file in request")
         current_progress["message"] = "Ready"
+        interaction_logger.log_file_upload(session_id, None, 0, time.time() - upload_start_time, 0, False, "No file uploaded")
         return jsonify({'error': 'No file uploaded'}), 400
     
     file = request.files['file']
     if file.filename == '':
         log_step("FILE_UPLOAD", "ERROR", "Empty filename")
         current_progress["message"] = "Ready"
+        interaction_logger.log_file_upload(session_id, "", 0, time.time() - upload_start_time, 0, False, "No file selected")
         return jsonify({'error': 'No file selected'}), 400
     
-    log_step("FILE_VALIDATION", "INFO", f"File: {file.filename}, Size: {len(file.read())} bytes")
-    file.seek(0)  # Reset file pointer after reading size
+    file_size = len(file.read())
+    file.seek(0)  # Reset file pointer
+    log_step("FILE_VALIDATION", "INFO", f"File: {file.filename}, Size: {file_size} bytes")
     
     if file and file.filename.lower().endswith('.pdf'):
         try:
@@ -889,28 +960,41 @@ def upload_file():
                     session['session_id'] = session_id
                     log_step("SESSION_STORAGE", "INFO", f"Stored data with session ID: {session_id}")
                     
+                    processing_time = time.time() - upload_start_time
                     log_step("FILE_UPLOAD", "END", f"Successfully processed {file.filename}")
                     current_progress["message"] = "Ready"
+                    
+                    # Log successful upload
+                    interaction_logger.log_file_upload(session_id, file.filename, file_size, processing_time, len(observations), True)
+                    
                     return jsonify({
                         'success': True,
                         'observations_count': len(observations),
                         'observations': observations
                     })
                 else:
+                    processing_time = time.time() - upload_start_time
                     log_step("FILE_UPLOAD", "ERROR", "No observations found in document")
                     current_progress["message"] = "Ready"
+                    interaction_logger.log_file_upload(session_id, file.filename, file_size, processing_time, 0, False, "No observations found")
                     return jsonify({'error': 'No observations found in the document'}), 400
             else:
+                processing_time = time.time() - upload_start_time
                 log_step("FILE_UPLOAD", "ERROR", "Could not extract text from PDF")
                 current_progress["message"] = "Ready"
+                interaction_logger.log_file_upload(session_id, file.filename, file_size, processing_time, 0, False, "Could not extract text from PDF")
                 return jsonify({'error': 'Could not extract text from PDF'}), 400
         except Exception as e:
+            processing_time = time.time() - upload_start_time
             log_step("FILE_UPLOAD", "ERROR", f"Exception: {str(e)}")
             current_progress["message"] = "Ready"
+            interaction_logger.log_file_upload(session_id, file.filename, file_size, processing_time, 0, False, str(e))
             return jsonify({'error': f'Error processing file: {str(e)}'}), 500
     else:
+        processing_time = time.time() - upload_start_time
         log_step("FILE_UPLOAD", "ERROR", f"Invalid file type: {file.filename}")
         current_progress["message"] = "Ready"
+        interaction_logger.log_file_upload(session_id, file.filename, file_size, processing_time, 0, False, "Invalid file type")
         return jsonify({'error': 'Please upload a PDF file'}), 400
 
 @app.route('/process_tasks', methods=['POST'])
@@ -964,6 +1048,9 @@ def process_tasks():
 
 @app.route('/generate_matrix', methods=['POST'])
 def generate_matrix():
+    matrix_start_time = time.time()
+    session_id = session.get('session_id', 'unknown')
+    
     log_request('/generate_matrix', 'POST', len(request.data))
     log_step("MATRIX_GENERATION", "START", "Processing matrix generation request")
     
@@ -975,6 +1062,9 @@ def generate_matrix():
         log_step("DATA_VALIDATION", "INFO", f"Received {len(edited_observations_with_tasks)} observations with tasks")
         
         if not edited_observations_with_tasks:
+            interaction_logger.log_matrix_generation(session_id, time.time() - matrix_start_time, 0, False, "No observations data provided")
+            log_step("MATRIX_GENERATION", "ERROR", "No observations data provided")
+            return jsonify({'error': 'No observations data provided'}), 400
             log_step("MATRIX_GENERATION", "ERROR", "No observations data provided")
             return jsonify({'error': 'No observations data provided'}), 400
         
