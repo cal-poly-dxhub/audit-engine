@@ -919,17 +919,19 @@ def upload_file():
     if 'file' not in request.files:
         log_step("FILE_UPLOAD", "ERROR", "No file in request")
         current_progress["message"] = "Ready"
-        interaction_logger.log_file_upload(session_id, None, 0, time.time() - upload_start_time, 0, False, "No file uploaded")
+        interaction_logger.log_file_upload(session_id, None, 0, time.time() - upload_start_time, 0, None, False, "No file uploaded")
         return jsonify({'error': 'No file uploaded'}), 400
     
     file = request.files['file']
     if file.filename == '':
         log_step("FILE_UPLOAD", "ERROR", "Empty filename")
         current_progress["message"] = "Ready"
-        interaction_logger.log_file_upload(session_id, "", 0, time.time() - upload_start_time, 0, False, "No file selected")
+        interaction_logger.log_file_upload(session_id, "", 0, time.time() - upload_start_time, 0, None, False, "No file selected")
         return jsonify({'error': 'No file selected'}), 400
     
-    file_size = len(file.read())
+    # Read file content for storage
+    file_content = file.read()
+    file_size = len(file_content)
     file.seek(0)  # Reset file pointer
     log_step("FILE_VALIDATION", "INFO", f"File: {file.filename}, Size: {file_size} bytes")
     
@@ -958,7 +960,7 @@ def upload_file():
                     current_progress["message"] = "Ready"
                     
                     # Log successful upload
-                    interaction_logger.log_file_upload(session_id, file.filename, file_size, processing_time, len(observations), True)
+                    interaction_logger.log_file_upload(session_id, file.filename, file_size, processing_time, len(observations), file_content, True)
                     
                     return jsonify({
                         'success': True,
@@ -969,25 +971,25 @@ def upload_file():
                     processing_time = time.time() - upload_start_time
                     log_step("FILE_UPLOAD", "ERROR", "No observations found in document")
                     current_progress["message"] = "Ready"
-                    interaction_logger.log_file_upload(session_id, file.filename, file_size, processing_time, 0, False, "No observations found")
+                    interaction_logger.log_file_upload(session_id, file.filename, file_size, processing_time, 0, file_content, False, "No observations found")
                     return jsonify({'error': 'No observations found in the document'}), 400
             else:
                 processing_time = time.time() - upload_start_time
                 log_step("FILE_UPLOAD", "ERROR", "Could not extract text from PDF")
                 current_progress["message"] = "Ready"
-                interaction_logger.log_file_upload(session_id, file.filename, file_size, processing_time, 0, False, "Could not extract text from PDF")
+                interaction_logger.log_file_upload(session_id, file.filename, file_size, processing_time, 0, file_content, False, "Could not extract text from PDF")
                 return jsonify({'error': 'Could not extract text from PDF'}), 400
         except Exception as e:
             processing_time = time.time() - upload_start_time
             log_step("FILE_UPLOAD", "ERROR", f"Exception: {str(e)}")
             current_progress["message"] = "Ready"
-            interaction_logger.log_file_upload(session_id, file.filename, file_size, processing_time, 0, False, str(e))
+            interaction_logger.log_file_upload(session_id, file.filename, file_size, processing_time, 0, file_content, False, str(e))
             return jsonify({'error': f'Error processing file: {str(e)}'}), 500
     else:
         processing_time = time.time() - upload_start_time
         log_step("FILE_UPLOAD", "ERROR", f"Invalid file type: {file.filename}")
         current_progress["message"] = "Ready"
-        interaction_logger.log_file_upload(session_id, file.filename, file_size, processing_time, 0, False, "Invalid file type")
+        interaction_logger.log_file_upload(session_id, file.filename, file_size, processing_time, 0, file_content, False, "Invalid file type")
         return jsonify({'error': 'Please upload a PDF file'}), 400
 
 @app.route('/process_tasks', methods=['POST'])

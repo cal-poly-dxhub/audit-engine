@@ -1,0 +1,9 @@
+{
+  "event_type": "ai_command",
+  "session_id": "b0121138-5e35-4644-b04e-257e910ae50b",
+  "command": "change task 1a completion date to april 12 2028",
+  "response_time_seconds": 1.5427131652832031,
+  "changes_applied": 1,
+  "success": true,
+  "error": null
+}

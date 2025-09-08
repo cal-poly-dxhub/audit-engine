@@ -13,6 +13,7 @@ class InteractionLogger:
         # Create subdirectories
         (self.log_dir / "sessions").mkdir(exist_ok=True)
         (self.log_dir / "uploads").mkdir(exist_ok=True)
+        (self.log_dir / "uploaded_files").mkdir(exist_ok=True)  # Store actual files
         (self.log_dir / "ai_commands").mkdir(exist_ok=True)
         (self.log_dir / "edits").mkdir(exist_ok=True)
         (self.log_dir / "exports").mkdir(exist_ok=True)
@@ -54,12 +55,29 @@ class InteractionLogger:
                 "events": []
             }, f, indent=2)
     
-    def log_file_upload(self, session_id, filename, file_size, processing_time, observations_count, success=True, error=None):
+    def log_file_upload(self, session_id, filename, file_size, processing_time, observations_count, file_content=None, success=True, error=None):
         """Log file upload and processing"""
+        timestamp = int(time.time())
+        stored_filename = None
+        
+        # Store the actual file if provided
+        if file_content and filename:
+            # Create safe filename with timestamp
+            safe_filename = f"{session_id}_{timestamp}_{filename.replace(' ', '_')}"
+            stored_file_path = self.log_dir / "uploaded_files" / safe_filename
+            
+            try:
+                with open(stored_file_path, "wb") as f:
+                    f.write(file_content)
+                stored_filename = safe_filename
+            except Exception as e:
+                print(f"Warning: Could not store uploaded file: {e}")
+        
         upload_data = {
             "event_type": "file_upload",
             "session_id": session_id,
             "filename": filename,
+            "stored_filename": stored_filename,
             "file_size_bytes": file_size,
             "processing_time_seconds": processing_time,
             "observations_extracted": observations_count,
@@ -70,7 +88,7 @@ class InteractionLogger:
         self._write_log(upload_data)
         
         # Save detailed upload log
-        upload_file = self.log_dir / "uploads" / f"upload_{session_id}_{int(time.time())}.json"
+        upload_file = self.log_dir / "uploads" / f"upload_{session_id}_{timestamp}.json"
         with open(upload_file, "w", encoding="utf-8") as f:
             json.dump(upload_data, f, indent=2)
     

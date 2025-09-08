@@ -1,0 +1,9 @@
+{
+  "event_type": "ai_command",
+  "session_id": "b0121138-5e35-4644-b04e-257e910ae50b",
+  "command": "change division for all tasks in observation 1 to noyce school of computing",
+  "response_time_seconds": 2.766023874282837,
+  "changes_applied": 0,
+  "success": false,
+  "error": "Invalid division value. 'noyce school of computing' is not in the allowed list of divisions. Available divisions are: Academic Affairs, Administration and Finance, Information Technology Services, Research, Strategic Enrollment Management, Student Affairs, University Communications and Marketing, University Development and Alumni Engagement, University Office of Diversity and Inclusion, University Personnel. Did you mean 'Information Technology Services'?"
+}
