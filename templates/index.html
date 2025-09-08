@@ -1173,13 +1173,15 @@
             const tasksContainer = document.getElementById(`tasks-${obsIdx}`);
             const isCompact = tasksContainer.classList.contains('compact-view');
             
+            // Get current form values before toggling
+            const currentData = collectEditedData();
+            const [observation, tasks] = currentData[obsIdx];
+            
             if (isCompact) {
                 tasksContainer.classList.remove('compact-view');
-                const [observation, tasks] = currentObservationsWithTasks[obsIdx];
                 tasksContainer.innerHTML = tasks.map((task, taskIdx) => createTaskHTML(task, obsIdx, taskIdx, false)).join('');
             } else {
                 tasksContainer.classList.add('compact-view');
-                const [observation, tasks] = currentObservationsWithTasks[obsIdx];
                 tasksContainer.innerHTML = `
                     <div class="compact-header row mb-2 fw-bold">
                         <div class="col-md-1">Task</div>
@@ -1191,6 +1193,9 @@
                     ${tasks.map((task, taskIdx) => createTaskHTML(task, obsIdx, taskIdx, true)).join('')}
                 `;
             }
+            
+            // Update the global data with current values
+            currentObservationsWithTasks[obsIdx] = [observation, tasks];
         }
 
         function expandTask(obsIdx, taskIdx) {
