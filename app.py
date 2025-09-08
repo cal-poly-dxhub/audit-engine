@@ -75,6 +75,13 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 
+# Progress tracking
+current_progress = {"message": "Ready"}
+
+@app.route('/progress')
+def get_progress():
+    return jsonify(current_progress)
+
 # In-memory storage to avoid session size limits
 app_data = {}
 
@@ -722,16 +729,20 @@ def index():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
+    global current_progress
     log_request('/upload', 'POST')
     log_step("FILE_UPLOAD", "START", "Processing file upload request")
+    current_progress["message"] = "Validating file..."
     
     if 'file' not in request.files:
         log_step("FILE_UPLOAD", "ERROR", "No file in request")
+        current_progress["message"] = "Ready"
         return jsonify({'error': 'No file uploaded'}), 400
     
     file = request.files['file']
     if file.filename == '':
         log_step("FILE_UPLOAD", "ERROR", "Empty filename")
+        current_progress["message"] = "Ready"
         return jsonify({'error': 'No file selected'}), 400
     
     log_step("FILE_VALIDATION", "INFO", f"File: {file.filename}, Size: {len(file.read())} bytes")
@@ -739,22 +750,26 @@ def upload_file():
     
     if file and file.filename.lower().endswith('.pdf'):
         try:
+            current_progress["message"] = "Extracting text from PDF..."
             log_step("PDF_PROCESSING", "START", f"Processing PDF: {file.filename}")
             audit_text = processor.extract_pdf_text(file)
             log_step("PDF_PROCESSING", "END", f"Extracted {len(audit_text)} characters")
             
             if audit_text:
+                current_progress["message"] = "Analyzing document with AI..."
                 log_step("OBSERVATION_EXTRACTION", "START", "Starting observation extraction")
                 observations = processor.extract_observations_and_responses(audit_text)
                 log_step("OBSERVATION_EXTRACTION", "END", f"Extracted {len(observations)} observations")
                 
                 if observations:
+                    current_progress["message"] = "Finalizing results..."
                     session_id = str(uuid.uuid4())
                     app_data[session_id] = {'observations': observations}
                     session['session_id'] = session_id
                     log_step("SESSION_STORAGE", "INFO", f"Stored data with session ID: {session_id}")
                     
                     log_step("FILE_UPLOAD", "END", f"Successfully processed {file.filename}")
+                    current_progress["message"] = "Ready"
                     return jsonify({
                         'success': True,
                         'observations_count': len(observations),
@@ -762,19 +777,24 @@ def upload_file():
                     })
                 else:
                     log_step("FILE_UPLOAD", "ERROR", "No observations found in document")
+                    current_progress["message"] = "Ready"
                     return jsonify({'error': 'No observations found in the document'}), 400
             else:
                 log_step("FILE_UPLOAD", "ERROR", "Could not extract text from PDF")
+                current_progress["message"] = "Ready"
                 return jsonify({'error': 'Could not extract text from PDF'}), 400
         except Exception as e:
             log_step("FILE_UPLOAD", "ERROR", f"Exception: {str(e)}")
+            current_progress["message"] = "Ready"
             return jsonify({'error': f'Error processing file: {str(e)}'}), 500
     else:
         log_step("FILE_UPLOAD", "ERROR", f"Invalid file type: {file.filename}")
+        current_progress["message"] = "Ready"
         return jsonify({'error': 'Please upload a PDF file'}), 400
 
 @app.route('/process_tasks', methods=['POST'])
 def process_tasks():
+    global current_progress
     log_request('/process_tasks', 'POST')
     log_step("TASK_PROCESSING", "START", "Processing task breakdown request")
     
@@ -784,6 +804,7 @@ def process_tasks():
         
         if not session_id or session_id not in app_data:
             log_step("TASK_PROCESSING", "ERROR", "No observations found in session")
+            current_progress["message"] = "Ready"
             return jsonify({'error': 'No observations found in session'}), 400
         
         observations = app_data[session_id]['observations']
@@ -791,6 +812,7 @@ def process_tasks():
         
         observations_with_tasks = []
         for i, obs in enumerate(observations):
+            current_progress["message"] = f"Breaking down observation {i+1} of {len(observations)} into tasks..."
             log_step("TASK_BREAKDOWN", "START", f"Processing observation {i+1}/{len(observations)}: {obs.get('observation_title', 'Unnamed')}")
             start_time = time.time()
             
@@ -802,18 +824,21 @@ def process_tasks():
             
             observations_with_tasks.append((obs, tasks))
         
+        current_progress["message"] = "Finalizing task breakdown..."
         app_data[session_id]['observations_with_tasks'] = observations_with_tasks
         log_step("SESSION_UPDATE", "INFO", f"Updated session with task data")
         
         total_tasks = sum(len(tasks) for _, tasks in observations_with_tasks)
         log_step("TASK_PROCESSING", "END", f"Processed {len(observations)} observations into {total_tasks} total tasks")
         
+        current_progress["message"] = "Ready"
         return jsonify({
             'success': True,
             'observations_with_tasks': observations_with_tasks
         })
     except Exception as e:
         log_step("TASK_PROCESSING", "ERROR", f"Exception: {str(e)}")
+        current_progress["message"] = "Ready"
         return jsonify({'error': f'Error processing tasks: {str(e)}'}), 500
 
 @app.route('/generate_matrix', methods=['POST'])

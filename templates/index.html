@@ -130,7 +130,7 @@
                         <div class="d-flex align-items-center">
                             <div class="spinner-border text-primary me-3" role="status"></div>
                             <div>
-                                <div>Processing PDF...</div>
+                                <div id="progressText">Processing PDF...</div>
                                 <small class="text-muted">This may take a few minutes</small>
                             </div>
                         </div>
@@ -334,6 +334,17 @@
             document.getElementById('uploadSpinner').style.display = 'block';
             this.disabled = true;
             
+            // Start progress polling
+            const progressInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/progress');
+                    const data = await response.json();
+                    document.getElementById('progressText').textContent = data.message || 'Processing PDF...';
+                } catch (error) {
+                    // Ignore progress polling errors
+                }
+            }, 1000);
+            
             try {
                 const response = await fetch('/upload', {
                     method: 'POST',
@@ -351,12 +362,26 @@
             } catch (error) {
                 showToast('Error uploading file: ' + error.message, 'error');
             } finally {
+                clearInterval(progressInterval);
                 document.getElementById('uploadSpinner').style.display = 'none';
                 this.disabled = false;
             }
         });
 
         async function processTasksAndShowStep2(observations) {
+            document.getElementById('progressText').textContent = 'Breaking down management responses into tasks...';
+            
+            // Start progress polling for task processing
+            const progressInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/progress');
+                    const data = await response.json();
+                    document.getElementById('progressText').textContent = data.message || 'Processing tasks...';
+                } catch (error) {
+                    // Ignore progress polling errors
+                }
+            }, 1000);
+            
             try {
                 const response = await fetch('/process_tasks', {
                     method: 'POST',
@@ -376,6 +401,8 @@
                 }
             } catch (error) {
                 showToast('Error processing tasks: ' + error.message, 'error');
+            } finally {
+                clearInterval(progressInterval);
             }
         }
 
