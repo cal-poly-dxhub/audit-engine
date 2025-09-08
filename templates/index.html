@@ -456,6 +456,8 @@
 
         function createTaskHTML(task, obsIdx, taskIdx) {
             const stepLetter = String.fromCharCode(65 + taskIdx);
+            const [observation, tasks] = currentObservationsWithTasks[obsIdx];
+            const isLastTask = taskIdx === tasks.length - 1;
             
             return `
                 <div class="task-item">
@@ -463,7 +465,8 @@
                     
                     <div class="mb-3">
                         <label class="form-label">Management Response Text (Verbatim)</label>
-                        <textarea class="form-control" rows="4" readonly>${task.task_text || ''}</textarea>
+                        <textarea class="form-control" rows="4" 
+                                  data-obs="${obsIdx}" data-task="${taskIdx}" data-field="task_text">${task.task_text || ''}</textarea>
                     </div>
                     
                     <div class="row">
@@ -594,6 +597,18 @@
                     <div class="mt-2">
                         <button type="button" class="btn btn-outline-primary btn-sm" onclick="showCombineTasksModal(${obsIdx})">
                             <i class="fas fa-compress-arrows-alt me-1"></i>Combine Tasks
+                        </button>
+                        <button type="button" class="btn btn-outline-success btn-sm" onclick="addTask(${obsIdx}, ${taskIdx + 1})">
+                            <i class="fas fa-plus me-1"></i>Add Task
+                        </button>
+                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="deleteTask(${obsIdx}, ${taskIdx})">
+                            <i class="fas fa-trash me-1"></i>Delete
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="moveTaskUp(${obsIdx}, ${taskIdx})" ${taskIdx === 0 ? 'disabled' : ''}>
+                            <i class="fas fa-arrow-up me-1"></i>Up
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="moveTaskDown(${obsIdx}, ${taskIdx})" ${isLastTask ? 'disabled' : ''}>
+                            <i class="fas fa-arrow-down me-1"></i>Down
                         </button>
                     </div>
                 </div>
@@ -729,7 +744,7 @@
                         const editedTask = { ...task };
                         
                         // Collect all form fields for this task
-                        const fields = ['inferred_department', 'implementation_type', 'contact', 'inferred_division', 'inferred_vp', 'inferred_cabinet_member', 'due_date'];
+                        const fields = ['task_text', 'inferred_department', 'implementation_type', 'contact', 'inferred_division', 'inferred_vp', 'inferred_cabinet_member', 'due_date'];
                         fields.forEach(field => {
                             const element = document.querySelector(`[data-obs="${obsIdx}"][data-task="${taskIdx}"][data-field="${field}"]`);
                             if (element) {
@@ -946,6 +961,63 @@
             modal.hide();
             
             showToast(`Combined ${selectedTasks.length} tasks successfully`, 'success');
+        }
+
+        function addTask(obsIdx, position) {
+            const [observation, tasks] = currentObservationsWithTasks[obsIdx];
+            
+            const newTask = {
+                task_text: '',
+                inferred_department: '',
+                implementation_type: 'Process Improvement',
+                contact: '',
+                requires_collaboration: false,
+                inferred_division: '',
+                inferred_vp: '',
+                inferred_cabinet_member: '',
+                due_date: ''
+            };
+            
+            tasks.splice(position, 0, newTask);
+            currentObservationsWithTasks[obsIdx] = [observation, tasks];
+            displayObservationsForReview(currentObservationsWithTasks);
+            showToast('Task added successfully', 'success');
+        }
+
+        function deleteTask(obsIdx, taskIdx) {
+            const [observation, tasks] = currentObservationsWithTasks[obsIdx];
+            
+            if (tasks.length <= 1) {
+                showToast('Cannot delete the last task', 'error');
+                return;
+            }
+            
+            if (confirm('Are you sure you want to delete this task?')) {
+                tasks.splice(taskIdx, 1);
+                currentObservationsWithTasks[obsIdx] = [observation, tasks];
+                displayObservationsForReview(currentObservationsWithTasks);
+                showToast('Task deleted successfully', 'success');
+            }
+        }
+
+        function moveTaskUp(obsIdx, taskIdx) {
+            if (taskIdx === 0) return;
+            
+            const [observation, tasks] = currentObservationsWithTasks[obsIdx];
+            [tasks[taskIdx], tasks[taskIdx - 1]] = [tasks[taskIdx - 1], tasks[taskIdx]];
+            currentObservationsWithTasks[obsIdx] = [observation, tasks];
+            displayObservationsForReview(currentObservationsWithTasks);
+            showToast('Task moved up', 'success');
+        }
+
+        function moveTaskDown(obsIdx, taskIdx) {
+            const [observation, tasks] = currentObservationsWithTasks[obsIdx];
+            if (taskIdx === tasks.length - 1) return;
+            
+            [tasks[taskIdx], tasks[taskIdx + 1]] = [tasks[taskIdx + 1], tasks[taskIdx]];
+            currentObservationsWithTasks[obsIdx] = [observation, tasks];
+            displayObservationsForReview(currentObservationsWithTasks);
+            showToast('Task moved down', 'success');
         }
     </script>
 </body>
