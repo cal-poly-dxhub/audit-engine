@@ -168,20 +168,25 @@ class BedrockClient:
             })
             log_step("LLM_REQUEST_PREP", "END", f"Request body size: {len(body)} bytes")
 
-            log_step("LLM_API_CALL", "START", f"Starting regular Bedrock API call")
+            log_step("LLM_API_CALL", "START", f"Starting streaming Bedrock API call")
             
-            # Use regular invoke_model instead of streaming
-            response = self.client.invoke_model(
+            # Use streaming invoke_model_with_response_stream
+            response = self.client.invoke_model_with_response_stream(
                 body=body, 
                 modelId=self.model_id, 
                 contentType="application/json"
             )
             
-            log_step("LLM_API_CALL", "END", f"API call completed")
+            # Stream and collect response
+            result_text = ""
+            for event in response['body']:
+                chunk = json.loads(event['chunk']['bytes'])
+                if chunk['type'] == 'content_block_delta':
+                    text_chunk = chunk['delta']['text']
+                    print(text_chunk, end='', flush=True)
+                    result_text += text_chunk
             
-            # Parse response
-            response_body = json.loads(response.get('body').read())
-            result_text = response_body['content'][0]['text']
+            log_step("LLM_API_CALL", "END", f"Streaming completed")
             
             duration = time.time() - start_time
             
