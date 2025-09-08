@@ -130,15 +130,20 @@ Return JSON with this structure:
 }
 
 IMPORTANT - Available fields (use EXACTLY these names):
-- task_text (for management response text)
-- contact (for contact person)
-- due_date (for due dates, use YYYY-MM-DD format)
-- inferred_department (for department)
-- inferred_division (for division)
-- inferred_vp (for VP)
-- inferred_cabinet_member (for cabinet member)
-- implementation_type (for implementation type)
-- requires_collaboration (for collaboration, use true/false)
+- task_text (for management response text) - any text value
+- contact (for contact person) - any text value
+- due_date (for due dates, use YYYY-MM-DD format) - any valid date
+- inferred_department (for department) - any text value
+- inferred_division (for division) - MUST be one of: Academic Affairs, Administration and Finance, Information Technology Services, Research, Strategic Enrollment Management, Student Affairs, University Communications and Marketing, University Development and Alumni Engagement, University Office of Diversity and Inclusion, University Personnel
+- inferred_vp (for VP) - MUST be one of: President, Interim Provost and Executive Vice President for Academic Affairs, Senior Vice President Administration and Finance Chief Financial Officer (CFO), Vice President & CEO of Cal Poly Solano Campus, Interim Vice President University Personnel and Chief Human Resources Officer, Vice President for Strategic Initiatives and Advocacy, Chief of Staff, Vice President of Strategic Enrollment Management and Student Affairs, Vice President Information Technology and Chief Information Officer (CIO), Vice President Facilities Management and Development, Vice President University Communications and Marketing, CEO Cal Poly Partners, Vice President University Development & Alumni Engagement and CEO of the Cal Poly Foundation, University Counsel
+- inferred_cabinet_member (for cabinet member) - MUST be one of: President, Interim Provost and Executive Vice President for Academic Affairs, Senior Vice President Administration and Finance Chief Financial Officer (CFO), Vice President & CEO of Cal Poly Solano Campus, Interim Vice President University Personnel and Chief Human Resources Officer, Vice President for Strategic Initiatives and Advocacy, Chief of Staff, Vice President of Strategic Enrollment Management and Student Affairs, Vice President Information Technology and Chief Information Officer (CIO), Vice President Facilities Management and Development, Vice President University Communications and Marketing, CEO Cal Poly Partners, Vice President University Development & Alumni Engagement and CEO of the Cal Poly Foundation, University Counsel
+- implementation_type (for implementation type) - MUST be one of: Process Improvement, Policy Change, Process Assessment/Evaluation, New Process Implementation, Communication/Reinforcement, Remediation, Other
+- requires_collaboration (for collaboration, use true/false) - boolean value
+
+VALIDATION RULES:
+- If a value is not in the allowed list for dropdown fields, REJECT the command with an error message
+- For "ITS" use "Information Technology Services" instead
+- For abbreviations, suggest the full proper name from the list above
 
 Special operations:
 - For combining tasks: use "action": "combine", "obs_idx": 0, "task_indices": [0,1,2]
@@ -170,6 +175,12 @@ Current date for calculations: {datetime.now().strftime('%Y-%m-%d')}
             json_match = re.search(r'\{.*\}', llm_response, re.DOTALL)
             if json_match:
                 parsed_command = json.loads(json_match.group())
+                
+                # Check if AI returned an error
+                if 'error' in parsed_command:
+                    current_progress["message"] = "Ready"
+                    return jsonify({'error': parsed_command['error']}), 400
+                
                 current_progress["message"] = "Ready"
                 return jsonify({
                     'success': True,
