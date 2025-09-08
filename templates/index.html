@@ -171,6 +171,28 @@
 
             <div id="observationsContainer"></div>
 
+            <!-- Natural Language Commands -->
+            <div class="card mb-4" id="nlCommandPanel" style="display: none;">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-magic me-2"></i>Natural Language Commands</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Tell me what to change:</label>
+                        <textarea class="form-control" id="nlCommand" rows="2" placeholder="Examples:&#10;• Change contact person for tasks 1A, 1C, 2B to President Armstrong&#10;• Set due date for all tasks in observation 3 to one month from now&#10;• Change division for tasks 1A through 1D to Academic Affairs"></textarea>
+                    </div>
+                    <button type="button" class="btn btn-primary" onclick="processNLCommand()">
+                        <i class="fas fa-wand-magic-sparkles me-2"></i>Apply Changes
+                    </button>
+                    <div id="nlProcessing" class="mt-2" style="display: none;">
+                        <div class="d-flex align-items-center">
+                            <div class="spinner-border spinner-border-sm text-primary me-2"></div>
+                            <span>Processing command...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <button type="button" class="btn btn-primary btn-lg" id="generateMatrixBtn">
                 <i class="fas fa-table me-2"></i>Generate Evidence Request Matrix
             </button>
@@ -407,6 +429,9 @@
         function displayObservationsForReview(observationsWithTasks) {
             const container = document.getElementById('observationsContainer');
             container.innerHTML = '';
+            
+            // Show natural language command panel
+            document.getElementById('nlCommandPanel').style.display = 'block';
             
             let totalTasks = 0;
             
@@ -1162,6 +1187,54 @@
             document.getElementById(`bulkContact-${obsIdx}`).value = '';
             document.getElementById(`bulkDivision-${obsIdx}`).value = '';
             document.getElementById(`bulkDueDate-${obsIdx}`).value = '';
+        }
+
+        async function processNLCommand() {
+            const command = document.getElementById('nlCommand').value.trim();
+            if (!command) {
+                showToast('Please enter a command', 'error');
+                return;
+            }
+
+            document.getElementById('nlProcessing').style.display = 'block';
+            
+            try {
+                const response = await fetch('/process_nl_command', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        command: command,
+                        observations_with_tasks: currentObservationsWithTasks
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Apply the changes
+                    result.changes.forEach(change => {
+                        const element = document.querySelector(`[data-obs="${change.obs_idx}"][data-task="${change.task_idx}"][data-field="${change.field}"]`);
+                        if (element) {
+                            if (element.type === 'checkbox') {
+                                element.checked = change.value;
+                            } else {
+                                element.value = change.value;
+                            }
+                        }
+                    });
+                    
+                    showToast(`Applied ${result.changes.length} changes: ${result.summary}`, 'success');
+                    document.getElementById('nlCommand').value = '';
+                } else {
+                    showToast(result.error, 'error');
+                }
+            } catch (error) {
+                showToast('Error processing command: ' + error.message, 'error');
+            } finally {
+                document.getElementById('nlProcessing').style.display = 'none';
+            }
         }
     </script>
 </body>

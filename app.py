@@ -82,6 +82,88 @@ current_progress = {"message": "Ready"}
 def get_progress():
     return jsonify(current_progress)
 
+@app.route('/process_nl_command', methods=['POST'])
+def process_nl_command():
+    global current_progress
+    log_request('/process_nl_command', 'POST')
+    
+    try:
+        data = request.json
+        command = data.get('command', '')
+        observations_with_tasks = data.get('observations_with_tasks', [])
+        
+        current_progress["message"] = "Processing natural language command..."
+        
+        # Create a prompt for the LLM to parse the command
+        prompt = f"""
+Parse this natural language command and return a JSON response with the changes to apply.
+
+Command: "{command}"
+
+Available observations and tasks:
+"""
+        
+        # Add context about available observations and tasks
+        for obs_idx, (observation, tasks) in enumerate(observations_with_tasks):
+            prompt += f"\nObservation {obs_idx + 1}: {observation.get('observation_title', 'Unnamed')} ({len(tasks)} tasks)\n"
+            for task_idx, task in enumerate(tasks):
+                task_letter = chr(65 + task_idx)  # A, B, C, etc.
+                prompt += f"  Task {obs_idx + 1}{task_letter}: {task.get('task_text', '')[:100]}...\n"
+        
+        prompt += """
+Return JSON with this structure:
+{
+  "changes": [
+    {
+      "obs_idx": 0,
+      "task_idx": 0, 
+      "field": "contact",
+      "value": "President Armstrong"
+    }
+  ],
+  "summary": "Changed contact for 3 tasks to President Armstrong"
+}
+
+Available fields: contact, due_date, inferred_department, inferred_division, inferred_vp, inferred_cabinet_member, implementation_type, requires_collaboration
+
+For dates, use YYYY-MM-DD format. For "one month from now", calculate the actual date.
+Task references like "1A", "2B" mean observation 1 task A, observation 2 task B.
+"All tasks in observation X" means all tasks for that observation.
+"""
+        
+        # Call LLM to parse the command
+        response = processor.bedrock_client.invoke_model(
+            modelId="us.anthropic.claude-sonnet-4-20250514-v1:0",
+            body=json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 2000,
+                "messages": [{"role": "user", "content": prompt}]
+            })
+        )
+        
+        response_body = json.loads(response['body'].read())
+        llm_response = response_body['content'][0]['text']
+        
+        # Extract JSON from response
+        import re
+        json_match = re.search(r'\{.*\}', llm_response, re.DOTALL)
+        if json_match:
+            parsed_command = json.loads(json_match.group())
+            current_progress["message"] = "Ready"
+            return jsonify({
+                'success': True,
+                'changes': parsed_command.get('changes', []),
+                'summary': parsed_command.get('summary', 'Applied changes')
+            })
+        else:
+            current_progress["message"] = "Ready"
+            return jsonify({'error': 'Could not parse command'}), 400
+            
+    except Exception as e:
+        current_progress["message"] = "Ready"
+        log_step("NL_COMMAND", "ERROR", f"Exception: {str(e)}")
+        return jsonify({'error': f'Error processing command: {str(e)}'}), 500
+
 # In-memory storage to avoid session size limits
 app_data = {}
 
