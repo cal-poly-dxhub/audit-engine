@@ -15,6 +15,10 @@ import time
 import os
 import uuid
 from pydantic import BaseModel, Field
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Initialize colorama
 init(autoreset=True)
@@ -120,11 +124,18 @@ class BedrockClient:
     """AWS Bedrock client for LLM interactions with structured output"""
 
     def __init__(self):
-        self.client = boto3.client("bedrock-runtime", region_name="us-west-2")
+        # Get API key from environment
+        # Create client with API key authentication
+        self.client = boto3.client(
+            "bedrock-runtime", 
+            region_name="us-west-2"
+        )
         self.model_id = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+        #self.model_id = "anthropic.claude-3-5-haiku-20241022-v1:0"
+        #self.model_id = "us.anthropic.claude-opus-4-1-20250805-v1:0"
 
     def invoke_model_structured(self, prompt: str, response_model, max_tokens: int = 4000):
-        """Invoke Claude with structured output using streaming"""
+        """Invoke Claude with structured output using regular API call"""
         start_time = time.time()
         log_step("LLM_INVOCATION", "START", f"Model: {self.model_id}, Max tokens: {max_tokens}, Response model: {response_model.__name__ if response_model else 'None'}")
         
@@ -148,7 +159,7 @@ class BedrockClient:
         print(f"{Fore.GREEN}[{timestamp}] [FILE] Saved full input to: {input_filename}{Style.RESET_ALL}")
         
         try:
-            log_step("LLM_REQUEST_PREP", "START", f"Preparing streaming request body")
+            log_step("LLM_REQUEST_PREP", "START", f"Preparing regular request body")
             body = json.dumps({
                 "anthropic_version": "bedrock-2023-05-31",
                 "max_tokens": max_tokens,
@@ -157,34 +168,20 @@ class BedrockClient:
             })
             log_step("LLM_REQUEST_PREP", "END", f"Request body size: {len(body)} bytes")
 
-            log_step("LLM_STREAMING_CALL", "START", f"Starting streaming Bedrock API call")
+            log_step("LLM_API_CALL", "START", f"Starting regular Bedrock API call")
             
-            # Use invoke_model_with_response_stream for streaming
-            response = self.client.invoke_model_with_response_stream(
+            # Use regular invoke_model instead of streaming
+            response = self.client.invoke_model(
                 body=body, 
                 modelId=self.model_id, 
                 contentType="application/json"
             )
             
-            log_step("LLM_STREAMING_CALL", "INFO", f"Stream initiated, processing chunks...")
+            log_step("LLM_API_CALL", "END", f"API call completed")
             
-            # Process streaming response
-            result_text = ""
-            print(f"{Fore.YELLOW}[STREAMING] {Style.RESET_ALL}", end="", flush=True)
-            
-            for event in response.get('body'):
-                chunk = json.loads(event['chunk']['bytes'])
-                
-                if chunk['type'] == 'content_block_delta':
-                    delta_text = chunk['delta']['text']
-                    result_text += delta_text
-                    # Print streaming text in real-time
-                    print(f"{Fore.GREEN}{delta_text}{Style.RESET_ALL}", end="", flush=True)
-                elif chunk['type'] == 'message_stop':
-                    print(f"\n{Fore.YELLOW}[STREAM_END]{Style.RESET_ALL}")
-                    break
-            
-            log_step("LLM_STREAMING_CALL", "END", f"Stream completed")
+            # Parse response
+            response_body = json.loads(response.get('body').read())
+            result_text = response_body['content'][0]['text']
             
             duration = time.time() - start_time
             
@@ -208,7 +205,7 @@ class BedrockClient:
             
             # Parse with instructor for validation
             try:
-                log_step("JSON_EXTRACTION", "START", f"Extracting JSON from streamed response")
+                log_step("JSON_EXTRACTION", "START", f"Extracting JSON from response")
                 # Extract JSON from response
                 json_start = result_text.find("{")
                 json_end = result_text.rfind("}") + 1
@@ -285,6 +282,8 @@ class AuditDocumentProcessor:
 
     def __init__(self, bedrock_client: BedrockClient):
         self.bedrock_client = bedrock_client
+        self.llm_process_start_time = None
+        self.llm_process_end_time = None
 
     def extract_pdf_text(self, pdf_file) -> str:
         """Extract text from uploaded PDF file"""
@@ -314,7 +313,9 @@ class AuditDocumentProcessor:
     def extract_observations_and_responses(self, audit_text: str) -> List[Dict]:
         """Extract observations and their verbatim management responses from audit text"""
         start_time = time.time()
+        self.llm_process_start_time = start_time  # Start global LLM timing
         log_step("EXTRACT_OBSERVATIONS", "START")
+        log_step("LLM_PROCESS_TIMING", "START", "Beginning entire LLM process timing")
 
         prompt = f"""
         You are an expert audit analyst. Extract ALL observations/findings and their COMPLETE management responses from this audit report.
@@ -378,6 +379,9 @@ class AuditDocumentProcessor:
 
         management_response = observation.get('management_response', '')
         if not management_response:
+            self.llm_process_end_time = time.time()  # End global LLM timing
+            total_llm_duration = self.llm_process_end_time - self.llm_process_start_time
+            log_step("LLM_PROCESS_TIMING", "END", f"Total LLM process duration: {total_llm_duration:.2f}s")
             return [observation]
 
         prompt = f"""
@@ -453,6 +457,9 @@ class AuditDocumentProcessor:
             
             if response is None:
                 log_step("SPLIT_TASKS", "ERROR", "Received None response from LLM")
+                self.llm_process_end_time = time.time()  # End global LLM timing
+                total_llm_duration = self.llm_process_end_time - self.llm_process_start_time
+                log_step("LLM_PROCESS_TIMING", "END", f"Total LLM process duration: {total_llm_duration:.2f}s")
                 return [{
                     "task_text": management_response,
                     "inferred_department": "To be determined [User input required]",
@@ -477,6 +484,9 @@ class AuditDocumentProcessor:
                     }]
                 
                 duration = time.time() - start_time
+                self.llm_process_end_time = time.time()  # End global LLM timing
+                total_llm_duration = self.llm_process_end_time - self.llm_process_start_time
+                log_step("LLM_PROCESS_TIMING", "END", f"Total LLM process duration: {total_llm_duration:.2f}s")
                 log_step("SPLIT_TASKS", "END", f"Split into {len(tasks)} tasks in {duration:.2f}s")
                 return tasks
             else:
@@ -513,11 +523,17 @@ class AuditDocumentProcessor:
                         }]
                     
                     duration = time.time() - start_time
+                    self.llm_process_end_time = time.time()  # End global LLM timing
+                    total_llm_duration = self.llm_process_end_time - self.llm_process_start_time
+                    log_step("LLM_PROCESS_TIMING", "END", f"Total LLM process duration: {total_llm_duration:.2f}s")
                     log_step("SPLIT_TASKS", "END", f"Split into {len(tasks)} tasks in {duration:.2f}s")
                     return tasks
                 except Exception as parse_error:
                     log_step("SPLIT_TASKS", "ERROR", f"Fallback parsing error: {str(parse_error)}")
                     duration = time.time() - start_time
+                    self.llm_process_end_time = time.time()  # End global LLM timing
+                    total_llm_duration = self.llm_process_end_time - self.llm_process_start_time
+                    log_step("LLM_PROCESS_TIMING", "END", f"Total LLM process duration: {total_llm_duration:.2f}s")
                     log_step("SPLIT_TASKS", "END", f"Using fallback single task in {duration:.2f}s")
                     return [{
                         "task_text": management_response,
@@ -531,6 +547,9 @@ class AuditDocumentProcessor:
             
         except Exception as e:
             duration = time.time() - start_time
+            self.llm_process_end_time = time.time()  # End global LLM timing
+            total_llm_duration = self.llm_process_end_time - self.llm_process_start_time
+            log_step("LLM_PROCESS_TIMING", "END", f"Total LLM process duration: {total_llm_duration:.2f}s")
             log_step("SPLIT_TASKS", "ERROR", f"Error: {str(e)}")
             return [{
                 "task_text": management_response,
