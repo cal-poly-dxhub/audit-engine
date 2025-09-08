@@ -92,6 +92,16 @@
         .severity-medium {
             background-color: #fff4e6 !important;
         }
+        
+        .task-item-compact {
+            background-color: #f8f9fa;
+        }
+        
+        .compact-header {
+            background-color: #e9ecef;
+            padding: 8px;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
@@ -160,6 +170,47 @@
             </div>
 
             <div id="observationsContainer"></div>
+
+            <!-- Bulk Operations Panel -->
+            <div class="card mb-4" id="bulkOpsPanel" style="display: none;">
+                <div class="card-header">
+                    <h5 class="mb-0">Bulk Operations</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <label class="form-label">Contact Person</label>
+                            <input type="text" class="form-control" id="bulkContact" placeholder="Apply to all tasks">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Division</label>
+                            <select class="form-select" id="bulkDivision">
+                                <option value="">Select Division</option>
+                                <option value="Academic Affairs">Academic Affairs</option>
+                                <option value="Administration and Finance">Administration and Finance</option>
+                                <option value="Information Technology Services">Information Technology Services</option>
+                                <option value="Research">Research</option>
+                                <option value="Strategic Enrollment Management">Strategic Enrollment Management</option>
+                                <option value="Student Affairs">Student Affairs</option>
+                                <option value="University Communications and Marketing">University Communications and Marketing</option>
+                                <option value="University Development and Alumni Engagement">University Development and Alumni Engagement</option>
+                                <option value="University Office of Diversity and Inclusion">University Office of Diversity and Inclusion</option>
+                                <option value="University Personnel">University Personnel</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Due Date</label>
+                            <input type="date" class="form-control" id="bulkDueDate">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">&nbsp;</label>
+                            <div>
+                                <button type="button" class="btn btn-primary" onclick="applyBulkChanges()">Apply to All Tasks</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <button type="button" class="btn btn-primary btn-lg" id="generateMatrixBtn">
                 <i class="fas fa-table me-2"></i>Generate Evidence Request Matrix
@@ -398,6 +449,9 @@
             const container = document.getElementById('observationsContainer');
             container.innerHTML = '';
             
+            // Show bulk operations panel
+            document.getElementById('bulkOpsPanel').style.display = 'block';
+            
             let totalTasks = 0;
             
             observationsWithTasks.forEach((item, obsIdx) => {
@@ -407,13 +461,18 @@
                 const obsCard = document.createElement('div');
                 obsCard.className = 'card observation-card mb-4';
                 obsCard.innerHTML = `
-                    <div class="card-header">
+                    <div class="card-header d-flex justify-content-between align-items-center">
                         <h5 class="mb-0">Observation ${obsIdx + 1}: ${observation.observation_title || 'Unnamed'}</h5>
+                        <div>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleCompactView(${obsIdx})">
+                                <i class="fas fa-compress-alt me-1"></i>Compact View
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body">
                         <div class="mb-3">
                             <label class="form-label">Description</label>
-                            <textarea class="form-control" rows="3" readonly>${observation.observation_description || ''}</textarea>
+                            <textarea class="form-control" rows="2" readonly>${observation.observation_description || ''}</textarea>
                         </div>
                         
                         <div class="mb-3">
@@ -424,10 +483,9 @@
                             </select>
                         </div>
                         
-                        <h6>Management Response Tasks</h6>
-                        <p class="text-muted">Below are the verbatim excerpts from the management response, split into trackable tasks:</p>
+                        <h6>Management Response Tasks (${tasks.length} tasks)</h6>
                         
-                        <div id="tasks-${obsIdx}">
+                        <div id="tasks-${obsIdx}" class="tasks-container">
                             ${tasks.map((task, taskIdx) => createTaskHTML(task, obsIdx, taskIdx)).join('')}
                         </div>
                     </div>
@@ -441,10 +499,53 @@
             document.getElementById('tasksCount').textContent = totalTasks;
         }
 
-        function createTaskHTML(task, obsIdx, taskIdx) {
+        function createTaskHTML(task, obsIdx, taskIdx, compact = false) {
             const stepLetter = String.fromCharCode(65 + taskIdx);
             const [observation, tasks] = currentObservationsWithTasks[obsIdx];
             const isLastTask = taskIdx === tasks.length - 1;
+            
+            if (compact) {
+                return `
+                    <div class="task-item-compact border rounded p-2 mb-2">
+                        <div class="row align-items-center">
+                            <div class="col-md-1">
+                                <strong>Task ${stepLetter}</strong>
+                            </div>
+                            <div class="col-md-4">
+                                <textarea class="form-control form-control-sm" rows="2" 
+                                          data-obs="${obsIdx}" data-task="${taskIdx}" data-field="task_text">${task.task_text || ''}</textarea>
+                            </div>
+                            <div class="col-md-2">
+                                <input type="text" class="form-control form-control-sm" placeholder="Contact" 
+                                       value="${task.contact || ''}" data-obs="${obsIdx}" data-task="${taskIdx}" data-field="contact">
+                            </div>
+                            <div class="col-md-2">
+                                <input type="date" class="form-control form-control-sm" 
+                                       value="${task.due_date || ''}" data-obs="${obsIdx}" data-task="${taskIdx}" data-field="due_date">
+                            </div>
+                            <div class="col-md-3">
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <button type="button" class="btn btn-outline-success btn-sm" onclick="addTask(${obsIdx}, ${taskIdx + 1})" title="Add Task">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-danger btn-sm" onclick="deleteTask(${obsIdx}, ${taskIdx})" title="Delete">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="moveTaskUp(${obsIdx}, ${taskIdx})" ${taskIdx === 0 ? 'disabled' : ''} title="Move Up">
+                                        <i class="fas fa-arrow-up"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="moveTaskDown(${obsIdx}, ${taskIdx})" ${isLastTask ? 'disabled' : ''} title="Move Down">
+                                        <i class="fas fa-arrow-down"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-info btn-sm" onclick="expandTask(${obsIdx}, ${taskIdx})" title="Expand">
+                                        <i class="fas fa-expand"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
             
             return `
                 <div class="task-item">
@@ -1004,6 +1105,75 @@
             currentObservationsWithTasks[obsIdx] = [observation, tasks];
             displayObservationsForReview(currentObservationsWithTasks);
             showToast('Task moved down', 'success');
+        }
+
+        function toggleCompactView(obsIdx) {
+            const tasksContainer = document.getElementById(`tasks-${obsIdx}`);
+            const isCompact = tasksContainer.classList.contains('compact-view');
+            
+            if (isCompact) {
+                tasksContainer.classList.remove('compact-view');
+                const [observation, tasks] = currentObservationsWithTasks[obsIdx];
+                tasksContainer.innerHTML = tasks.map((task, taskIdx) => createTaskHTML(task, obsIdx, taskIdx, false)).join('');
+            } else {
+                tasksContainer.classList.add('compact-view');
+                const [observation, tasks] = currentObservationsWithTasks[obsIdx];
+                tasksContainer.innerHTML = `
+                    <div class="compact-header row mb-2 fw-bold">
+                        <div class="col-md-1">Task</div>
+                        <div class="col-md-4">Description</div>
+                        <div class="col-md-2">Contact</div>
+                        <div class="col-md-2">Due Date</div>
+                        <div class="col-md-3">Actions</div>
+                    </div>
+                    ${tasks.map((task, taskIdx) => createTaskHTML(task, obsIdx, taskIdx, true)).join('')}
+                `;
+            }
+        }
+
+        function expandTask(obsIdx, taskIdx) {
+            toggleCompactView(obsIdx);
+        }
+
+        function applyBulkChanges() {
+            const bulkContact = document.getElementById('bulkContact').value;
+            const bulkDivision = document.getElementById('bulkDivision').value;
+            const bulkDueDate = document.getElementById('bulkDueDate').value;
+            
+            let changesApplied = 0;
+            
+            currentObservationsWithTasks.forEach(([observation, tasks], obsIdx) => {
+                tasks.forEach((task, taskIdx) => {
+                    if (bulkContact) {
+                        const contactInput = document.querySelector(`[data-obs="${obsIdx}"][data-task="${taskIdx}"][data-field="contact"]`);
+                        if (contactInput) {
+                            contactInput.value = bulkContact;
+                            changesApplied++;
+                        }
+                    }
+                    if (bulkDivision) {
+                        const divisionSelect = document.querySelector(`[data-obs="${obsIdx}"][data-task="${taskIdx}"][data-field="inferred_division"]`);
+                        if (divisionSelect) {
+                            divisionSelect.value = bulkDivision;
+                            changesApplied++;
+                        }
+                    }
+                    if (bulkDueDate) {
+                        const dueDateInput = document.querySelector(`[data-obs="${obsIdx}"][data-task="${taskIdx}"][data-field="due_date"]`);
+                        if (dueDateInput) {
+                            dueDateInput.value = bulkDueDate;
+                            changesApplied++;
+                        }
+                    }
+                });
+            });
+            
+            showToast(`Applied ${changesApplied} bulk changes`, 'success');
+            
+            // Clear bulk inputs
+            document.getElementById('bulkContact').value = '';
+            document.getElementById('bulkDivision').value = '';
+            document.getElementById('bulkDueDate').value = '';
         }
     </script>
 </body>
