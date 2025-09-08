@@ -1,9 +1,0 @@
-{
-  "event_type": "ai_command",
-  "session_id": "774b1ec0-f85f-4892-b496-715d730e88df",
-  "command": "change task 3a. description to \"none provided\"",
-  "response_time_seconds": 1.6072139739990234,
-  "changes_applied": 1,
-  "success": true,
-  "error": null
-}

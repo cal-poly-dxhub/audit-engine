@@ -1,9 +1,0 @@
-{
-  "event_type": "ai_command",
-  "session_id": "774b1ec0-f85f-4892-b496-715d730e88df",
-  "command": "change cabinet member for 1b to deputy cio ryan matteson",
-  "response_time_seconds": 6.386098861694336,
-  "changes_applied": 0,
-  "success": false,
-  "error": "Invalid cabinet member value 'deputy cio ryan matteson'. Must be one of: President, Interim Provost and Executive Vice President for Academic Affairs, Senior Vice President Administration and Finance Chief Financial Officer (CFO), Vice President & CEO of Cal Poly Solano Campus, Interim Vice President University Personnel and Chief Human Resources Officer, Vice President for Strategic Initiatives and Advocacy, Chief of Staff, Vice President of Strategic Enrollment Management and Student Affairs, Vice President Information Technology and Chief Information Officer (CIO), Vice President Facilities Management and Development, Vice President University Communications and Marketing, CEO Cal Poly Partners, Vice President University Development & Alumni Engagement and CEO of the Cal Poly Foundation, University Counsel. Did you mean 'Vice President Information Technology and Chief Information Officer (CIO)'?"
-}
