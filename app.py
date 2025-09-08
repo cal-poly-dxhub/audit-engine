@@ -14,7 +14,6 @@ from colorama import init, Fore, Back, Style
 import time
 import os
 import uuid
-import instructor
 from pydantic import BaseModel, Field
 
 # Initialize colorama
