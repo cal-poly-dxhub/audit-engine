@@ -85,6 +85,7 @@ def get_progress():
 @app.route('/process_nl_command', methods=['POST'])
 def process_nl_command():
     global current_progress
+    from datetime import datetime
     log_request('/process_nl_command', 'POST')
     
     try:
@@ -108,7 +109,11 @@ Available observations and tasks:
             prompt += f"\nObservation {obs_idx + 1}: {observation.get('observation_title', 'Unnamed')} ({len(tasks)} tasks)\n"
             for task_idx, task in enumerate(tasks):
                 task_letter = chr(65 + task_idx)  # A, B, C, etc.
+                current_contact = task.get('contact', 'Not set')
+                current_due_date = task.get('due_date', 'Not set')
+                current_division = task.get('inferred_division', 'Not set')
                 prompt += f"  Task {obs_idx + 1}{task_letter}: {task.get('task_text', '')[:100]}...\n"
+                prompt += f"    Contact: {current_contact}, Due Date: {current_due_date}, Division: {current_division}\n"
         
         prompt += """
 Return JSON with this structure:
@@ -141,7 +146,9 @@ Special operations:
 - For deleting tasks: use "action": "delete", "obs_idx": 0, "task_idx": 1
 
 Task references: "1A" = obs_idx: 0, task_idx: 0; "1B" = obs_idx: 0, task_idx: 1; "2C" = obs_idx: 1, task_idx: 2
-For "one month from now", calculate the actual date.
+For "one month from now", calculate the actual date from today.
+For relative date changes like "increase by 10 days", use the current due date shown above. If no current date exists, assume today's date as the starting point.
+Current date for calculations: {datetime.now().strftime('%Y-%m-%d')}
 """
         
         # Call LLM to parse the command

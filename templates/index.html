@@ -193,17 +193,38 @@
             <div class="card floating-nl-panel" id="nlCommandPanel" style="display: none;">
                 <div class="card-header" onclick="toggleNLPanel()">
                     <div class="d-flex justify-content-between align-items-center">
-                        <h6 class="mb-0"><i class="fas fa-magic me-2"></i>AI Commands</h6>
+                        <h6 class="mb-0">
+                            <i class="fas fa-magic me-2"></i>AI Commands
+                            <i class="fas fa-info-circle ms-2 text-muted" data-bs-toggle="tooltip" data-bs-placement="left" 
+                               title="Advanced AI Commands:&#10;&#10;• Field Changes: 'Set contact for tasks 1A, 2C, 3B to Dr. Sarah Johnson'&#10;• Bulk Operations: 'Change due date for all tasks in observations 2 and 4 to March 15, 2024'&#10;• Smart Dates: 'Set completion dates for observation 1 to 30 days from now'&#10;• Task Management: 'Combine tasks 1E, 1F, 1G into single task' or 'Delete task 2B'&#10;• Complex Logic: 'For all Academic Affairs tasks, set VP to Provost and require collaboration'&#10;• Conditional: 'Change all tasks with no contact person to require collaboration'&#10;&#10;Supports: contacts, dates, departments, divisions, VPs, cabinet members, collaboration flags, and task restructuring."></i>
+                        </h6>
                         <i class="fas fa-chevron-up" id="nlPanelIcon"></i>
                     </div>
                 </div>
                 <div class="card-body">
                     <div class="mb-3">
-                        <textarea class="form-control" id="nlCommand" rows="2" placeholder="Examples:&#10;• Change contact for task 1A to President Armstrong&#10;• Set due date for all tasks in observation 3 to one month from now"></textarea>
+                        <textarea class="form-control" id="nlCommand" rows="3" placeholder="Set contact for tasks 1A, 2C, 3B to Dr. Sarah Johnson, change due dates for all observation 2 tasks to 60 days from now, and combine tasks 1E-1G into single task">Set contact for tasks 1A, 2C, 3B to Dr. Sarah Johnson, change due dates for all observation 2 tasks to 60 days from now, and combine tasks 1E-1G into single task</textarea>
                     </div>
-                    <button type="button" class="btn btn-primary btn-sm w-100" onclick="processNLCommand()">
-                        <i class="fas fa-wand-magic-sparkles me-2"></i>Apply Changes
-                    </button>
+                    <div class="row">
+                        <div class="col-8">
+                            <button type="button" class="btn btn-primary btn-sm w-100" onclick="processNLCommand()">
+                                <i class="fas fa-wand-magic-sparkles me-2"></i>Apply Changes
+                            </button>
+                        </div>
+                        <div class="col-4">
+                            <button type="button" class="btn btn-outline-secondary btn-sm w-100" onclick="clearNLCommand()">
+                                <i class="fas fa-eraser me-1"></i>Clear
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        <small class="text-muted">
+                            <strong>Quick Examples:</strong><br>
+                            • <a href="#" onclick="setNLExample('Change contact for all tasks in observation 1 to President Armstrong')">Bulk contact change</a><br>
+                            • <a href="#" onclick="setNLExample('Set due dates for tasks 2A, 2B, 2C to March 15, 2024')">Specific date setting</a><br>
+                            • <a href="#" onclick="setNLExample('Delete tasks 1B and 1D, then combine remaining tasks 1A and 1C')">Complex restructuring</a>
+                        </small>
+                    </div>
                     <div id="nlProcessing" class="mt-2" style="display: none;">
                         <div class="d-flex align-items-center">
                             <div class="spinner-border spinner-border-sm text-primary me-2"></div>
@@ -452,6 +473,17 @@
             
             // Show natural language command panel
             document.getElementById('nlCommandPanel').style.display = 'block';
+            
+            // Initialize tooltips
+            setTimeout(() => {
+                const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+                tooltipTriggerList.map(function (tooltipTriggerEl) {
+                    return new bootstrap.Tooltip(tooltipTriggerEl, {
+                        html: true,
+                        boundary: 'viewport'
+                    });
+                });
+            }, 100);
             
             let totalTasks = 0;
             
@@ -1218,6 +1250,9 @@
 
             document.getElementById('nlProcessing').style.display = 'block';
             
+            // Update currentObservationsWithTasks with current form values
+            const updatedObservationsWithTasks = collectEditedData();
+            
             try {
                 const response = await fetch('/process_nl_command', {
                     method: 'POST',
@@ -1226,7 +1261,7 @@
                     },
                     body: JSON.stringify({
                         command: command,
-                        observations_with_tasks: currentObservationsWithTasks
+                        observations_with_tasks: updatedObservationsWithTasks
                     })
                 });
 
@@ -1311,6 +1346,16 @@
                 panel.classList.add('collapsed');
                 icon.className = 'fas fa-chevron-down';
             }
+        }
+
+        function clearNLCommand() {
+            document.getElementById('nlCommand').value = '';
+            document.getElementById('nlCommand').focus();
+        }
+
+        function setNLExample(example) {
+            document.getElementById('nlCommand').value = example;
+            document.getElementById('nlCommand').focus();
         }
     </script>
 </body>
