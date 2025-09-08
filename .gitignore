@@ -213,3 +213,6 @@ llm_output_*.txt
 debug_response_*.txt
 *.xlsx
 *.xls
+
+# Interaction logs and uploaded files
+interaction_logs/
