@@ -130,13 +130,6 @@ def process_nl_command():
         observations_with_tasks = data.get('observations_with_tasks', [])
         
         current_progress["message"] = "Processing natural language command..."
-    
-    try:
-        data = request.json
-        command = data.get('command', '')
-        observations_with_tasks = data.get('observations_with_tasks', [])
-        
-        current_progress["message"] = "Processing natural language command..."
         
         # Create a prompt for the LLM to parse the command
         prompt = f"""
