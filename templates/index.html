@@ -145,22 +145,16 @@
             <p>Review the extracted information. The system has preserved the verbatim management responses and suggested task breakdowns.</p>
             
             <div class="row mb-3" id="metricsRow">
-                <div class="col-md-4">
+                <div class="col-md-6">
                     <div class="metric-card">
                         <div class="metric-value" id="observationsCount">0</div>
                         <div>Observations</div>
                     </div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-6">
                     <div class="metric-card">
                         <div class="metric-value" id="tasksCount">0</div>
                         <div>Total Tasks</div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="metric-card">
-                        <div class="metric-value" id="avgTasks">0</div>
-                        <div>Avg Tasks/Observation</div>
                     </div>
                 </div>
             </div>
@@ -177,28 +171,22 @@
             <h3><i class="fas fa-table me-2"></i>Step 3: Review and Export Matrix</h3>
             
             <div class="row mb-3" id="matrixMetrics">
-                <div class="col-md-3">
+                <div class="col-md-4">
                     <div class="metric-card">
                         <div class="metric-value" id="totalRows">0</div>
                         <div>Total Rows</div>
                     </div>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-4">
                     <div class="metric-card">
                         <div class="metric-value" id="uniqueObs">0</div>
                         <div>Observations</div>
                     </div>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-4">
                     <div class="metric-card">
                         <div class="metric-value" id="sigIssues">0</div>
                         <div>Significant Issues</div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="metric-card">
-                        <div class="metric-value" id="collabRequired">0</div>
-                        <div>Requiring Collaboration</div>
                     </div>
                 </div>
             </div>
@@ -451,7 +439,6 @@
             // Update metrics
             document.getElementById('observationsCount').textContent = observationsWithTasks.length;
             document.getElementById('tasksCount').textContent = totalTasks;
-            document.getElementById('avgTasks').textContent = (totalTasks / observationsWithTasks.length).toFixed(1);
         }
 
         function createTaskHTML(task, obsIdx, taskIdx) {
@@ -784,7 +771,6 @@
             document.getElementById('totalRows').textContent = metrics.total_rows;
             document.getElementById('uniqueObs').textContent = metrics.observations;
             document.getElementById('sigIssues').textContent = metrics.significant_issues;
-            document.getElementById('collabRequired').textContent = metrics.collaboration_required;
             
             // Create table
             const table = document.getElementById('matrixTable');

@@ -756,7 +756,7 @@ def upload_file():
             log_step("PDF_PROCESSING", "END", f"Extracted {len(audit_text)} characters")
             
             if audit_text:
-                current_progress["message"] = "Analyzing document with AI..."
+                current_progress["message"] = "Extracting observations and responses..."
                 log_step("OBSERVATION_EXTRACTION", "START", "Starting observation extraction")
                 observations = processor.extract_observations_and_responses(audit_text)
                 log_step("OBSERVATION_EXTRACTION", "END", f"Extracted {len(observations)} observations")
