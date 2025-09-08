@@ -124,40 +124,57 @@ Return JSON with this structure:
   "summary": "Changed contact for 3 tasks to President Armstrong"
 }
 
-Available fields: contact, due_date, inferred_department, inferred_division, inferred_vp, inferred_cabinet_member, implementation_type, requires_collaboration
+IMPORTANT - Available fields (use EXACTLY these names):
+- task_text (for management response text)
+- contact (for contact person)
+- due_date (for due dates, use YYYY-MM-DD format)
+- inferred_department (for department)
+- inferred_division (for division)
+- inferred_vp (for VP)
+- inferred_cabinet_member (for cabinet member)
+- implementation_type (for implementation type)
+- requires_collaboration (for collaboration, use true/false)
 
-For dates, use YYYY-MM-DD format. For "one month from now", calculate the actual date.
-Task references like "1A", "2B" mean observation 1 task A, observation 2 task B.
-"All tasks in observation X" means all tasks for that observation.
+Special operations:
+- For combining tasks: use "action": "combine", "obs_idx": 0, "task_indices": [0,1,2]
+- For swapping tasks: change the task_text field of both tasks
+- For deleting tasks: use "action": "delete", "obs_idx": 0, "task_idx": 1
+
+Task references: "1A" = obs_idx: 0, task_idx: 0; "1B" = obs_idx: 0, task_idx: 1; "2C" = obs_idx: 1, task_idx: 2
+For "one month from now", calculate the actual date.
 """
         
         # Call LLM to parse the command
-        response = processor.bedrock_client.invoke_model(
-            modelId="us.anthropic.claude-sonnet-4-20250514-v1:0",
-            body=json.dumps({
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 2000,
-                "messages": [{"role": "user", "content": prompt}]
-            })
-        )
-        
-        response_body = json.loads(response['body'].read())
-        llm_response = response_body['content'][0]['text']
+        try:
+            llm_response = processor.bedrock_client.invoke_model_structured(prompt, None, max_tokens=2000)
+            
+            if not llm_response:
+                current_progress["message"] = "Ready"
+                return jsonify({'error': 'AI did not provide a response'}), 400
+                
+        except Exception as llm_error:
+            current_progress["message"] = "Ready"
+            log_step("NL_COMMAND", "ERROR", f"LLM call failed: {str(llm_error)}")
+            return jsonify({'error': f'AI processing failed: {str(llm_error)}'}), 500
         
         # Extract JSON from response
         import re
-        json_match = re.search(r'\{.*\}', llm_response, re.DOTALL)
-        if json_match:
-            parsed_command = json.loads(json_match.group())
+        try:
+            json_match = re.search(r'\{.*\}', llm_response, re.DOTALL)
+            if json_match:
+                parsed_command = json.loads(json_match.group())
+                current_progress["message"] = "Ready"
+                return jsonify({
+                    'success': True,
+                    'changes': parsed_command.get('changes', []),
+                    'summary': parsed_command.get('summary', 'Applied changes')
+                })
+            else:
+                current_progress["message"] = "Ready"
+                return jsonify({'error': 'Could not find JSON in AI response'}), 400
+        except json.JSONDecodeError as json_error:
             current_progress["message"] = "Ready"
-            return jsonify({
-                'success': True,
-                'changes': parsed_command.get('changes', []),
-                'summary': parsed_command.get('summary', 'Applied changes')
-            })
-        else:
-            current_progress["message"] = "Ready"
-            return jsonify({'error': 'Could not parse command'}), 400
+            return jsonify({'error': f'Could not parse AI response: {str(json_error)}'}), 400
             
     except Exception as e:
         current_progress["message"] = "Ready"
@@ -349,6 +366,10 @@ class BedrockClient:
                     else:
                         validated = TaskList(**parsed_data)
                         log_step("PYDANTIC_VALIDATION", "END", f"Validated task list")
+                elif response_model is None:
+                    # No validation needed, return raw text
+                    validated = result_text
+                    log_step("PYDANTIC_VALIDATION", "END", f"No validation - returning raw text")
                 else:
                     validated = response_model(**parsed_data)
                     log_step("PYDANTIC_VALIDATION", "END", f"Validated with custom model")

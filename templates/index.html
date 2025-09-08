@@ -102,6 +102,24 @@
             padding: 8px;
             border-radius: 4px;
         }
+        
+        .floating-nl-panel {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 400px;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .floating-nl-panel .card-header {
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        .floating-nl-panel.collapsed .card-body {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -171,17 +189,19 @@
 
             <div id="observationsContainer"></div>
 
-            <!-- Natural Language Commands -->
-            <div class="card mb-4" id="nlCommandPanel" style="display: none;">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-magic me-2"></i>Natural Language Commands</h5>
+            <!-- Natural Language Commands - Floating Panel -->
+            <div class="card floating-nl-panel" id="nlCommandPanel" style="display: none;">
+                <div class="card-header" onclick="toggleNLPanel()">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0"><i class="fas fa-magic me-2"></i>AI Commands</h6>
+                        <i class="fas fa-chevron-up" id="nlPanelIcon"></i>
+                    </div>
                 </div>
                 <div class="card-body">
                     <div class="mb-3">
-                        <label class="form-label">Tell me what to change:</label>
-                        <textarea class="form-control" id="nlCommand" rows="2" placeholder="Examples:&#10;• Change contact person for tasks 1A, 1C, 2B to President Armstrong&#10;• Set due date for all tasks in observation 3 to one month from now&#10;• Change division for tasks 1A through 1D to Academic Affairs"></textarea>
+                        <textarea class="form-control" id="nlCommand" rows="2" placeholder="Examples:&#10;• Change contact for task 1A to President Armstrong&#10;• Set due date for all tasks in observation 3 to one month from now"></textarea>
                     </div>
-                    <button type="button" class="btn btn-primary" onclick="processNLCommand()">
+                    <button type="button" class="btn btn-primary btn-sm w-100" onclick="processNLCommand()">
                         <i class="fas fa-wand-magic-sparkles me-2"></i>Apply Changes
                     </button>
                     <div id="nlProcessing" class="mt-2" style="display: none;">
@@ -1214,18 +1234,61 @@
                 
                 if (result.success) {
                     // Apply the changes
+                    console.log('Applying changes:', result.changes);
+                    let appliedCount = 0;
                     result.changes.forEach(change => {
-                        const element = document.querySelector(`[data-obs="${change.obs_idx}"][data-task="${change.task_idx}"][data-field="${change.field}"]`);
-                        if (element) {
-                            if (element.type === 'checkbox') {
-                                element.checked = change.value;
+                        if (change.action === 'combine') {
+                            // Handle task combination
+                            console.log(`Combining tasks in observation ${change.obs_idx}:`, change.task_indices);
+                            const [observation, tasks] = currentObservationsWithTasks[change.obs_idx];
+                            const combinedText = change.task_indices.map(idx => tasks[idx].task_text).join(' ');
+                            const firstTaskIdx = Math.min(...change.task_indices);
+                            
+                            // Create new combined task with metadata from first task
+                            const firstTask = tasks[firstTaskIdx];
+                            const combinedTask = {
+                                ...firstTask,
+                                task_text: combinedText
+                            };
+                            
+                            // Create new tasks array without the combined tasks
+                            const newTasks = tasks.filter((task, idx) => !change.task_indices.includes(idx));
+                            
+                            // Insert combined task at the position of the first original task
+                            newTasks.splice(firstTaskIdx, 0, combinedTask);
+                            
+                            currentObservationsWithTasks[change.obs_idx] = [observation, newTasks];
+                            displayObservationsForReview(currentObservationsWithTasks);
+                            appliedCount++;
+                        } else if (change.action === 'delete') {
+                            // Handle task deletion
+                            console.log(`Deleting task ${change.task_idx} from observation ${change.obs_idx}`);
+                            const [observation, tasks] = currentObservationsWithTasks[change.obs_idx];
+                            if (tasks.length > 1) {
+                                tasks.splice(change.task_idx, 1);
+                                currentObservationsWithTasks[change.obs_idx] = [observation, tasks];
+                                displayObservationsForReview(currentObservationsWithTasks);
+                                appliedCount++;
+                            }
+                        } else {
+                            // Handle regular field changes
+                            console.log(`Looking for element: [data-obs="${change.obs_idx}"][data-task="${change.task_idx}"][data-field="${change.field}"]`);
+                            const element = document.querySelector(`[data-obs="${change.obs_idx}"][data-task="${change.task_idx}"][data-field="${change.field}"]`);
+                            if (element) {
+                                console.log('Found element:', element);
+                                if (element.type === 'checkbox') {
+                                    element.checked = change.value;
+                                } else {
+                                    element.value = change.value;
+                                }
+                                appliedCount++;
                             } else {
-                                element.value = change.value;
+                                console.log('Element not found for change:', change);
                             }
                         }
                     });
                     
-                    showToast(`Applied ${result.changes.length} changes: ${result.summary}`, 'success');
+                    showToast(`Applied ${appliedCount}/${result.changes.length} changes: ${result.summary}`, appliedCount === result.changes.length ? 'success' : 'warning');
                     document.getElementById('nlCommand').value = '';
                 } else {
                     showToast(result.error, 'error');
@@ -1234,6 +1297,19 @@
                 showToast('Error processing command: ' + error.message, 'error');
             } finally {
                 document.getElementById('nlProcessing').style.display = 'none';
+            }
+        }
+
+        function toggleNLPanel() {
+            const panel = document.getElementById('nlCommandPanel');
+            const icon = document.getElementById('nlPanelIcon');
+            
+            if (panel.classList.contains('collapsed')) {
+                panel.classList.remove('collapsed');
+                icon.className = 'fas fa-chevron-up';
+            } else {
+                panel.classList.add('collapsed');
+                icon.className = 'fas fa-chevron-down';
             }
         }
     </script>
