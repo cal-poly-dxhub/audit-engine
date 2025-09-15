@@ -208,6 +208,7 @@ __marimo__/
 
 # Project-specific files
 audit_engine.log
+evidence_engine.log
 llm_input_*.txt
 llm_output_*.txt
 debug_response_*.txt
@@ -216,3 +217,6 @@ debug_response_*.txt
 
 # Interaction logs and uploaded files
 interaction_logs/
+
+# Evidence validation generated files
+evidence_annotations/
