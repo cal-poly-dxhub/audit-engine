@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evidence Validation Engine</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .evidence-status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .evidence-valid { background-color: #d4edda; border: 1px solid #c3e6cb; }
+        .evidence-invalid { background-color: #f8d7da; border: 1px solid #f5c6cb; }
+        .evidence-pending { background-color: #fff3cd; border: 1px solid #ffeaa7; }
+        
+        .task-card {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            transition: box-shadow 0.3s;
+        }
+        .task-card:hover { box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        
+        .evidence-upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin: 15px 0;
+            transition: border-color 0.3s;
+        }
+        .evidence-upload-area:hover { border-color: #007bff; }
+        
+        .annotated-image {
+            max-width: 100%;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        
+        .validation-result {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+            <div class="container">
+                <a class="navbar-brand" href="#">
+                    <i class="fas fa-shield-alt me-2"></i>Evidence Validation Engine
+                </a>
+            </div>
+        </nav>
+
+        <!-- Upload Audit Document Section -->
+        <div class="row mb-4" id="uploadSection">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-upload me-2"></i>Step 1: Upload Audit Document</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <input type="file" class="form-control" id="auditFile" accept=".pdf">
+                            <div class="form-text">Upload the audit PDF to extract tasks that need evidence validation.</div>
+                        </div>
+                        <button type="button" class="btn btn-primary" onclick="uploadAudit()">
+                            <i class="fas fa-file-upload me-2"></i>Process Audit Document
+                        </button>
+                        <div id="uploadProgress" class="mt-3" style="display: none;">
+                            <div class="d-flex align-items-center">
+                                <div class="spinner-border spinner-border-sm text-primary me-2"></div>
+                                <span>Processing document...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tasks and Evidence Section -->
+        <div class="row" id="tasksSection" style="display: none;">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="fas fa-tasks me-2"></i>Step 2: Upload Evidence for Tasks</h5>
+                        <span class="badge bg-info" id="tasksCount">0 tasks</span>
+                    </div>
+                    <div class="card-body">
+                        <div id="tasksContainer"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentObservations = [];
+
+        async function uploadAudit() {
+            const fileInput = document.getElementById('auditFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Please select a PDF file');
+                return;
+            }
+
+            document.getElementById('uploadProgress').style.display = 'block';
+            
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/upload_audit', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    currentObservations = result.observations_with_tasks;
+                    displayTasks();
+                    document.getElementById('tasksSection').style.display = 'block';
+                    document.getElementById('tasksCount').textContent = `${result.total_tasks} tasks`;
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch (error) {
+                alert('Error uploading file: ' + error.message);
+            } finally {
+                document.getElementById('uploadProgress').style.display = 'none';
+            }
+        }
+
+        function getTotalTasks() {
+            return currentObservations.reduce((total, [obs, tasks]) => total + tasks.length, 0);
+        }
+
+        function displayTasks() {
+            const container = document.getElementById('tasksContainer');
+            container.innerHTML = '';
+
+            currentObservations.forEach(([observation, tasks], obsIdx) => {
+                const obsCard = document.createElement('div');
+                obsCard.className = 'card mb-4';
+                obsCard.innerHTML = `
+                    <div class="card-header">
+                        <h6 class="mb-0">Observation ${obsIdx + 1}: ${observation.observation_title || 'Unnamed'} (${tasks.length} tasks)</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <strong>Description:</strong> ${observation.observation_description || 'No description'}
+                        </div>
+                        <div id="tasks-${obsIdx}">
+                            ${tasks.map((task, taskIdx) => createTaskCard(task, obsIdx, taskIdx)).join('')}
+                        </div>
+                    </div>
+                `;
+                container.appendChild(obsCard);
+            });
+        }
+
+        function createTaskCard(task, obsIdx, taskIdx) {
+            const taskLetter = String.fromCharCode(65 + taskIdx);
+            return `
+                <div class="task-card p-3 mb-3" id="task-${obsIdx}-${taskIdx}">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <h6 class="mb-0">Task ${obsIdx + 1}${taskLetter}</h6>
+                        <div class="evidence-status evidence-pending" id="status-${obsIdx}-${taskIdx}">
+                            <i class="fas fa-clock me-1"></i>Awaiting Evidence
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <strong>Task Description:</strong>
+                        <p class="mt-1">${task.task_text || 'No description available'}</p>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <small class="text-muted">Department:</small><br>
+                            <span>${task.inferred_department || 'Not specified'}</span>
+                        </div>
+                        <div class="col-md-4">
+                            <small class="text-muted">Implementation Type:</small><br>
+                            <span>${task.implementation_type || 'Not specified'}</span>
+                        </div>
+                        <div class="col-md-4">
+                            <small class="text-muted">Division:</small><br>
+                            <span>${task.inferred_division || 'Not specified'}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="evidence-upload-area" onclick="document.getElementById('evidence-${obsIdx}-${taskIdx}').click()">
+                        <i class="fas fa-cloud-upload-alt fa-2x text-muted mb-2"></i>
+                        <p class="mb-0">Click to upload evidence (PDF or Image)</p>
+                        <small class="text-muted">Supported formats: PDF, JPG, PNG, GIF, WebP</small>
+                    </div>
+                    
+                    <input type="file" id="evidence-${obsIdx}-${taskIdx}" style="display: none;" 
+                           accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" 
+                           onchange="showDescriptionModal(${obsIdx}, ${taskIdx}, this)">
+                    
+                    <div id="validation-result-${obsIdx}-${taskIdx}"></div>
+                </div>
+            `;
+        }
+
+        function showDescriptionModal(obsIdx, taskIdx, fileInput) {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            // Create modal HTML
+            const modalHTML = `
+                <div class="modal fade" id="descriptionModal" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Evidence Description</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <p><strong>Selected file:</strong> ${file.name}</p>
+                                <div class="mb-3">
+                                    <label class="form-label">How does this document provide evidence for task completion?</label>
+                                    <textarea class="form-control" id="evidenceDescription" rows="3" 
+                                              placeholder="Explain how this document demonstrates that the audit task has been completed. Be specific about what the document shows and how it relates to the task requirements."></textarea>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="button" class="btn btn-primary" onclick="submitEvidence(${obsIdx}, ${taskIdx}, '${file.name}')">
+                                    Submit Evidence
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Remove existing modal if any
+            const existingModal = document.getElementById('descriptionModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('descriptionModal'));
+            modal.show();
+
+            // Store file reference
+            window.currentEvidenceFile = file;
+        }
+
+        async function submitEvidence(obsIdx, taskIdx, filename) {
+            const description = document.getElementById('evidenceDescription').value.trim();
+            const file = window.currentEvidenceFile;
+            
+            if (!file) {
+                alert('File not found. Please try uploading again.');
+                return;
+            }
+
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('descriptionModal'));
+            modal.hide();
+
+            await uploadEvidence(obsIdx, taskIdx, file, description);
+        }
+
+        async function uploadEvidence(obsIdx, taskIdx, file, userDescription = '') {
+            if (!file) return;
+
+            const [observation, tasks] = currentObservations[obsIdx];
+            const task = tasks[taskIdx];
+            const statusElement = document.getElementById(`status-${obsIdx}-${taskIdx}`);
+            const resultContainer = document.getElementById(`validation-result-${obsIdx}-${taskIdx}`);
+            
+            // Show uploading status
+            statusElement.className = 'evidence-status evidence-pending';
+            statusElement.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Validating Evidence...';
+            
+            const formData = new FormData();
+            formData.append('evidence_file', file);
+            formData.append('obs_idx', obsIdx);
+            formData.append('task_idx', taskIdx);
+            formData.append('task_description', task.task_text || '');
+            formData.append('user_description', userDescription);
+            formData.append('task_context', JSON.stringify({
+                department: task.inferred_department,
+                implementation_type: task.implementation_type,
+                division: task.inferred_division,
+                requires_collaboration: task.requires_collaboration
+            }));
+
+            try {
+                const response = await fetch('/upload_evidence', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                
+                if (result.error) {
+                    statusElement.className = 'evidence-status evidence-invalid';
+                    statusElement.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i>Validation Error';
+                    resultContainer.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
+                } else {
+                    displayValidationResult(obsIdx, taskIdx, result);
+                }
+            } catch (error) {
+                statusElement.className = 'evidence-status evidence-invalid';
+                statusElement.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i>Upload Error';
+                resultContainer.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+            }
+        }
+
+        function displayValidationResult(obsIdx, taskIdx, result) {
+            const statusElement = document.getElementById(`status-${obsIdx}-${taskIdx}`);
+            const resultContainer = document.getElementById(`validation-result-${obsIdx}-${taskIdx}`);
+            
+            // Update status
+            if (result.is_valid) {
+                statusElement.className = 'evidence-status evidence-valid';
+                statusElement.innerHTML = '<i class="fas fa-check-circle me-1"></i>Evidence Accepted';
+            } else {
+                statusElement.className = 'evidence-status evidence-invalid';
+                statusElement.innerHTML = '<i class="fas fa-times-circle me-1"></i>Evidence Rejected';
+            }
+            
+            // Create result display
+            let resultHTML = `
+                <div class="validation-result ${result.is_valid ? 'bg-light-success' : 'bg-light-danger'}">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="mb-0">
+                            <i class="fas fa-${result.is_valid ? 'check' : 'times'} me-2"></i>
+                            Validation Result
+                        </h6>
+                        <span class="badge ${result.is_valid ? 'bg-success' : 'bg-danger'}">
+                            ${Math.round(result.confidence * 100)}% Confidence
+                        </span>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <strong>AI Analysis:</strong>
+                        <p class="mt-1">${result.reasoning}</p>
+                    </div>
+                    
+                    <div class="row">
+                        ${result.strengths && result.strengths.length > 0 ? `
+                            <div class="col-md-6">
+                                <strong class="text-success">Strengths:</strong>
+                                <ul class="mt-1">
+                                    ${result.strengths.map(s => `<li>${s}</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                        
+                        ${result.missing_elements && result.missing_elements.length > 0 ? `
+                            <div class="col-md-6">
+                                <strong class="text-danger">Missing Elements:</strong>
+                                <ul class="mt-1">
+                                    ${result.missing_elements.map(m => `<li>${m}</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                    </div>
+                    
+                    <div class="mt-3">
+                        <strong>Recommendation:</strong> 
+                        <span class="badge ${getRecommendationBadgeClass(result.recommendation)}">
+                            ${result.recommendation.toUpperCase()}
+                        </span>
+                    </div>
+                </div>
+            `;
+            
+            // Add annotated image if available
+            if (result.annotated_image) {
+                resultHTML += `
+                    <div class="mt-3">
+                        <h6><i class="fas fa-image me-2"></i>AI Analysis Visualization</h6>
+                        <img src="/get_annotated_image/${result.annotated_image}" class="annotated-image" alt="Annotated Evidence">
+                        <small class="text-muted d-block mt-1">
+                            Green boxes highlight supporting evidence, red boxes indicate issues or missing elements.
+                        </small>
+                    </div>
+                `;
+            }
+            
+            resultContainer.innerHTML = resultHTML;
+        }
+
+        function getRecommendationBadgeClass(recommendation) {
+            switch(recommendation) {
+                case 'accept': return 'bg-success';
+                case 'reject': return 'bg-danger';
+                case 'request_additional': return 'bg-warning';
+                default: return 'bg-secondary';
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            // Simple toast notification
+            const toast = document.createElement('div');
+            toast.className = `alert alert-${type} position-fixed top-0 end-0 m-3`;
+            toast.style.zIndex = '9999';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

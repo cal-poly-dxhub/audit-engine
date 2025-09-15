@@ -494,15 +494,15 @@
                 const obsCard = document.createElement('div');
                 obsCard.className = 'card observation-card mb-4';
                 obsCard.innerHTML = `
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">Observation ${obsIdx + 1}: ${observation.observation_title || 'Unnamed'}</h5>
-                        <div>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleCompactView(${obsIdx})">
-                                <i class="fas fa-compress-alt me-1"></i>Compact View
-                            </button>
+                    <div class="card-header" style="cursor: pointer;" onclick="toggleObservation(${obsIdx})">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">
+                                <i class="fas fa-chevron-right me-2" id="chevron-${obsIdx}"></i>
+                                Observation ${obsIdx + 1}: ${observation.observation_title || 'Unnamed'} (${tasks.length} tasks)
+                            </h5>
                         </div>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body collapse" id="observation-${obsIdx}">
                         <div class="mb-3">
                             <label class="form-label">Description</label>
                             <textarea class="form-control" rows="2" readonly>${observation.observation_description || ''}</textarea>
@@ -516,7 +516,7 @@
                             </select>
                         </div>
                         
-                        <h6>Management Response Tasks (${tasks.length} tasks)</h6>
+                        <h6>Management Response Tasks</h6>
                         
                         <div id="tasks-${obsIdx}" class="tasks-container">
                             ${tasks.map((task, taskIdx) => createTaskHTML(task, obsIdx, taskIdx)).join('')}
@@ -532,53 +532,10 @@
             document.getElementById('tasksCount').textContent = totalTasks;
         }
 
-        function createTaskHTML(task, obsIdx, taskIdx, compact = false) {
+        function createTaskHTML(task, obsIdx, taskIdx) {
             const stepLetter = String.fromCharCode(65 + taskIdx);
             const [observation, tasks] = currentObservationsWithTasks[obsIdx];
             const isLastTask = taskIdx === tasks.length - 1;
-            
-            if (compact) {
-                return `
-                    <div class="task-item-compact border rounded p-2 mb-2">
-                        <div class="row align-items-center">
-                            <div class="col-md-1">
-                                <strong>Task ${stepLetter}</strong>
-                            </div>
-                            <div class="col-md-4">
-                                <textarea class="form-control form-control-sm" rows="2" 
-                                          data-obs="${obsIdx}" data-task="${taskIdx}" data-field="task_text">${task.task_text || ''}</textarea>
-                            </div>
-                            <div class="col-md-2">
-                                <input type="text" class="form-control form-control-sm" placeholder="Contact" 
-                                       value="${task.contact || ''}" data-obs="${obsIdx}" data-task="${taskIdx}" data-field="contact">
-                            </div>
-                            <div class="col-md-2">
-                                <input type="date" class="form-control form-control-sm" 
-                                       value="${task.due_date || ''}" data-obs="${obsIdx}" data-task="${taskIdx}" data-field="due_date">
-                            </div>
-                            <div class="col-md-3">
-                                <div class="btn-group btn-group-sm" role="group">
-                                    <button type="button" class="btn btn-outline-success btn-sm" onclick="addTask(${obsIdx}, ${taskIdx + 1})" title="Add Task">
-                                        <i class="fas fa-plus"></i>
-                                    </button>
-                                    <button type="button" class="btn btn-outline-danger btn-sm" onclick="deleteTask(${obsIdx}, ${taskIdx})" title="Delete">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="moveTaskUp(${obsIdx}, ${taskIdx})" ${taskIdx === 0 ? 'disabled' : ''} title="Move Up">
-                                        <i class="fas fa-arrow-up"></i>
-                                    </button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="moveTaskDown(${obsIdx}, ${taskIdx})" ${isLastTask ? 'disabled' : ''} title="Move Down">
-                                        <i class="fas fa-arrow-down"></i>
-                                    </button>
-                                    <button type="button" class="btn btn-outline-info btn-sm" onclick="expandTask(${obsIdx}, ${taskIdx})" title="Expand">
-                                        <i class="fas fa-expand"></i>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }
             
             return `
                 <div class="task-item">
@@ -1169,37 +1126,21 @@
             });
         }
 
-        function toggleCompactView(obsIdx) {
-            const tasksContainer = document.getElementById(`tasks-${obsIdx}`);
-            const isCompact = tasksContainer.classList.contains('compact-view');
+        function toggleObservation(obsIdx) {
+            const observationBody = document.getElementById(`observation-${obsIdx}`);
+            const chevron = document.getElementById(`chevron-${obsIdx}`);
             
-            // Get current form values before toggling
-            const currentData = collectEditedData();
-            const [observation, tasks] = currentData[obsIdx];
-            
-            if (isCompact) {
-                tasksContainer.classList.remove('compact-view');
-                tasksContainer.innerHTML = tasks.map((task, taskIdx) => createTaskHTML(task, obsIdx, taskIdx, false)).join('');
+            if (observationBody.classList.contains('show')) {
+                observationBody.classList.remove('show');
+                chevron.className = 'fas fa-chevron-right me-2';
             } else {
-                tasksContainer.classList.add('compact-view');
-                tasksContainer.innerHTML = `
-                    <div class="compact-header row mb-2 fw-bold">
-                        <div class="col-md-1">Task</div>
-                        <div class="col-md-4">Description</div>
-                        <div class="col-md-2">Contact</div>
-                        <div class="col-md-2">Due Date</div>
-                        <div class="col-md-3">Actions</div>
-                    </div>
-                    ${tasks.map((task, taskIdx) => createTaskHTML(task, obsIdx, taskIdx, true)).join('')}
-                `;
+                observationBody.classList.add('show');
+                chevron.className = 'fas fa-chevron-down me-2';
             }
-            
-            // Update the global data with current values
-            currentObservationsWithTasks[obsIdx] = [observation, tasks];
         }
 
         function expandTask(obsIdx, taskIdx) {
-            toggleCompactView(obsIdx);
+            // This function can be removed or repurposed if needed
         }
 
         async function processNLCommand() {

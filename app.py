@@ -458,6 +458,42 @@ class BedrockClient:
         """Legacy method for backward compatibility"""
         return self.invoke_model_structured(prompt, None, max_tokens)
 
+    def invoke_model_with_image(self, content: list, max_tokens: int = 4000) -> str:
+        """Invoke Claude with image content"""
+        start_time = time.time()
+        log_step("LLM_INVOCATION", "START", f"Model: {self.model_id}, Max tokens: {max_tokens}, Content type: image")
+        
+        try:
+            body = json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": max_tokens,
+                "messages": [{"role": "user", "content": content}],
+                "temperature": 0.2,
+            })
+            
+            response = self.client.invoke_model_with_response_stream(
+                body=body, 
+                modelId=self.model_id, 
+                contentType="application/json"
+            )
+            
+            # Stream and collect response
+            result_text = ""
+            for event in response['body']:
+                chunk = json.loads(event['chunk']['bytes'])
+                if chunk['type'] == 'content_block_delta':
+                    text_chunk = chunk['delta']['text']
+                    result_text += text_chunk
+            
+            duration = time.time() - start_time
+            log_step("LLM_INVOCATION", "END", f"Duration: {duration:.2f}s - Image analysis completed")
+            return result_text
+            
+        except Exception as e:
+            duration = time.time() - start_time
+            log_step("LLM_INVOCATION", "ERROR", f"Error: {str(e)} - Duration: {duration:.2f}s")
+            return None
+
 class AuditDocumentProcessor:
     """Process audit documents and extract structured information"""
 
