@@ -296,12 +296,26 @@ class BedrockClient:
     """AWS Bedrock client for LLM interactions with structured output"""
 
     def __init__(self):
-        # Get API key from environment
-        # Create client with API key authentication
-        self.client = boto3.client(
-            "bedrock-runtime", 
-            region_name="us-west-2"
-        )
+        # Get region from environment or use default
+        region = os.getenv('AWS_DEFAULT_REGION', 'us-west-2')
+
+        # Check if using bearer token
+        bearer_token = os.getenv('AWS_BEARER_TOKEN_BEDROCK')
+
+        if bearer_token:
+            # Use bearer token authentication
+            self.client = boto3.client(
+                "bedrock-runtime",
+                region_name=region,
+                aws_session_token=bearer_token
+            )
+        else:
+            # Use standard AWS credentials
+            self.client = boto3.client(
+                "bedrock-runtime",
+                region_name=region
+            )
+
         self.model_id = "us.anthropic.claude-sonnet-4-20250514-v1:0"
         #self.model_id = "anthropic.claude-3-5-haiku-20241022-v1:0"
         #self.model_id = "us.anthropic.claude-opus-4-1-20250805-v1:0"

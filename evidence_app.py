@@ -49,9 +49,14 @@ app_data = {}
 # Import existing classes from app.py
 from app import BedrockClient, AuditDocumentProcessor, log_step, log_request
 
+# Import the Claude Code SDK evidence analysis agent
+from claude_code_evidence_agent import AsyncEvidenceAgent
+
 class EvidenceValidator:
     def __init__(self, bedrock_client: BedrockClient):
         self.bedrock_client = bedrock_client
+        # Initialize the Claude Code SDK evidence agent
+        self.claude_code_agent = AsyncEvidenceAgent()
         
     def validate_pdf_evidence(self, pdf_file, task_description: str, task_context: dict, user_description: str = "") -> dict:
         """Validate PDF evidence against task requirements"""
@@ -248,6 +253,74 @@ Coordinates should be normalized (0-1). Be precise with bounding boxes.
             logger.error(f"Error creating annotated image: {str(e)}")
             return None
 
+    def validate_evidence_with_agent(self, evidence_file, task_description: str, task_context: dict, user_description: str = "", use_agentic: bool = True) -> dict:
+        """
+        Enhanced evidence validation using agentic workflow for complex documents.
+
+        This method provides intelligent document analysis that can:
+        - Handle large, complex documents by breaking them into logical sections
+        - Perform cross-section analysis for consistency
+        - Provide detailed evidence quality assessment
+        - Generate comprehensive recommendations
+
+        Args:
+            evidence_file: Uploaded file object
+            task_description: Description of the audit task
+            task_context: Context about the task (department, type, etc.)
+            user_description: User's explanation of the evidence
+            use_agentic: Whether to use the agentic workflow (default: True)
+
+        Returns:
+            Enhanced validation result with detailed analysis
+        """
+        try:
+            # Read file content
+            file_content = evidence_file.read()
+            evidence_file.seek(0)  # Reset for potential reuse
+            filename = evidence_file.filename
+
+            if use_agentic:
+                logger.info(f"Starting Claude Code SDK agent analysis for {filename}")
+
+                # Use the Claude Code SDK agent for comprehensive analysis
+                result = self.claude_code_agent.analyze_evidence_sync(
+                    file_content,
+                    filename,
+                    task_description,
+                    task_context,
+                    user_description
+                )
+
+                # Add metadata about the analysis method
+                result['analysis_method'] = 'claude_code_sdk_agent'
+                result['agent_version'] = '2.0'
+
+                # If agentic analysis was successful, enhance with bounding boxes for images
+                if result.get('is_valid') and not result.get('error'):
+                    filename_lower = filename.lower()
+                    if filename_lower.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
+                        # For images, still generate bounding boxes using the original method
+                        bbox_result = self.validate_image_evidence(evidence_file, task_description, task_context, user_description)
+                        if bbox_result.get('bounding_boxes'):
+                            result['bounding_boxes'] = bbox_result['bounding_boxes']
+                            if bbox_result.get('annotated_image'):
+                                result['annotated_image'] = bbox_result['annotated_image']
+
+                return result
+            else:
+                # Fallback to original validation methods
+                filename_lower = filename.lower()
+                if filename_lower.endswith('.pdf'):
+                    return self.validate_pdf_evidence(evidence_file, task_description, task_context, user_description)
+                elif filename_lower.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
+                    return self.validate_image_evidence(evidence_file, task_description, task_context, user_description)
+                else:
+                    return {"error": "Unsupported file type for non-agentic analysis"}
+
+        except Exception as e:
+            logger.error(f"Error in agentic evidence validation: {str(e)}")
+            return {"error": f"Enhanced validation failed: {str(e)}"}
+
 # Initialize components
 bedrock_client = BedrockClient()
 processor = AuditDocumentProcessor(bedrock_client)
@@ -437,9 +510,46 @@ def upload_evidence():
         )
         
         return jsonify(result)
-        
+
     except Exception as e:
         return jsonify({'error': f'Error validating evidence: {str(e)}'}), 500
+
+@app.route('/upload_evidence_agent', methods=['POST'])
+def upload_evidence_agent():
+    """Upload and validate evidence using the agentic workflow for complex document analysis"""
+    session_id = session.get('session_id', 'unknown')
+
+    try:
+        # Get form data
+        obs_idx = int(request.form.get('obs_idx'))
+        task_idx = int(request.form.get('task_idx'))
+        task_description = request.form.get('task_description', '')
+        task_context = json.loads(request.form.get('task_context', '{}'))
+        user_description = request.form.get('user_description', '')
+        use_agentic = request.form.get('use_agentic', 'true').lower() == 'true'
+
+        if 'evidence_file' not in request.files:
+            return jsonify({'error': 'No evidence file uploaded'}), 400
+
+        evidence_file = request.files['evidence_file']
+        if evidence_file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+
+        # Use the enhanced agentic validation
+        result = evidence_validator.validate_evidence_with_agent(
+            evidence_file, task_description, task_context, user_description, use_agentic
+        )
+
+        # Log agentic evidence validation
+        interaction_logger.log_manual_edit(
+            session_id, 'evidence_upload_agent', obs_idx, task_idx,
+            'agentic_evidence_validation', user_description, json.dumps(result)
+        )
+
+        return jsonify(result)
+
+    except Exception as e:
+        return jsonify({'error': f'Error in agentic evidence validation: {str(e)}'}), 500
 
 @app.route('/get_annotated_image/<filename>')
 def get_annotated_image(filename):
@@ -458,6 +568,18 @@ def get_annotated_image(filename):
 @app.route('/progress')
 def get_progress():
     return jsonify(current_progress)
+
+@app.route('/agent_progress')
+def get_agent_progress():
+    """Get current Claude Code agent analysis progress"""
+    try:
+        if evidence_validator.claude_code_agent:
+            progress_info = evidence_validator.claude_code_agent.agent.get_analysis_status()
+            return jsonify(progress_info)
+        else:
+            return jsonify({"message": "No active analysis session", "status": "idle"})
+    except Exception as e:
+        return jsonify({"error": f"Could not get progress: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)

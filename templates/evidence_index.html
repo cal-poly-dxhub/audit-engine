@@ -304,14 +304,21 @@
                 division: task.inferred_division,
                 requires_collaboration: task.requires_collaboration
             }));
+            formData.append('use_agentic', 'true');
 
             try {
-                const response = await fetch('/upload_evidence', {
+                // Start progress monitoring
+                const progressInterval = startProgressMonitoring(obsIdx, taskIdx);
+
+                const response = await fetch('/upload_evidence_agent', {
                     method: 'POST',
                     body: formData
                 });
 
                 const result = await response.json();
+
+                // Stop progress monitoring
+                clearInterval(progressInterval);
                 
                 if (result.error) {
                     statusElement.className = 'evidence-status evidence-invalid';
@@ -419,10 +426,37 @@
             toast.style.zIndex = '9999';
             toast.textContent = message;
             document.body.appendChild(toast);
-            
+
             setTimeout(() => {
                 toast.remove();
             }, 3000);
+        }
+
+        function startProgressMonitoring(obsIdx, taskIdx) {
+            const statusElement = document.getElementById(`status-${obsIdx}-${taskIdx}`);
+
+            return setInterval(async () => {
+                try {
+                    const response = await fetch('/agent_progress');
+                    const progress = await response.json();
+
+                    if (progress.current_step && progress.current_step !== 'Idle') {
+                        statusElement.className = 'evidence-status evidence-pending';
+                        const percentage = Math.round(progress.progress_percentage || 0);
+                        statusElement.innerHTML = `
+                            <div class="d-flex align-items-center">
+                                <div class="spinner-border spinner-border-sm text-primary me-2"></div>
+                                <div>
+                                    <div>[AGENT] ${progress.current_step}</div>
+                                    <div class="small text-muted">${percentage}% complete (${progress.completed_steps}/${progress.total_steps} steps)</div>
+                                </div>
+                            </div>
+                        `;
+                    }
+                } catch (error) {
+                    console.log('Progress monitoring error:', error);
+                }
+            }, 2000); // Poll every 2 seconds
         }
     </script>
 </body>

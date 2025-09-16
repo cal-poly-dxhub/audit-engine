@@ -220,3 +220,8 @@ interaction_logs/
 
 # Evidence validation generated files
 evidence_annotations/
+
+# Claude Code agent temporary files and logs
+logs/
+claude_code_test.py
+new_claude_code_test.py

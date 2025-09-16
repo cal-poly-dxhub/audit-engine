@@ -1,0 +1,511 @@
+#!/usr/bin/env python3
+"""
+Claude Code SDK Evidence Analysis Agent
+
+This module implements a proper evidence analysis agent using the Claude Code Python SDK.
+The agent can analyze documents, understand context, and provide comprehensive evidence validation.
+"""
+
+import asyncio
+import json
+import time
+import logging
+from typing import Dict, List, Any, Optional, Union
+from pathlib import Path
+import tempfile
+import os
+from datetime import datetime
+
+# Claude Code SDK imports
+from claude_code_sdk import (
+    ClaudeSDKClient,
+    ClaudeCodeOptions,
+    AssistantMessage,
+    TextBlock,
+    ToolUseBlock,
+    ToolResultBlock,
+    ResultMessage
+)
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class ClaudeCodeEvidenceAgent:
+    """
+    Evidence analysis agent using the Claude Code Python SDK.
+
+    This agent can analyze various types of evidence documents and provide
+    comprehensive validation against audit task requirements.
+    """
+
+    def __init__(self, options: Optional[ClaudeCodeOptions] = None):
+        """Initialize the Claude Code evidence agent."""
+
+        # Configure default options if none provided
+        if options is None:
+            options = ClaudeCodeOptions(
+                allowed_tools=[
+                    "Read",           # Read files
+                    "Write",          # Write analysis results
+                    "Bash",           # Execute commands and install libraries
+                    "Glob",           # Find files
+                    "Grep",           # Search content
+                    "WebFetch"        # Web research if needed
+                ],
+                permission_mode="acceptEdits",  # Auto-accept file operations
+                system_prompt="""You are an expert evidence analysis agent specializing in audit compliance validation.
+
+Your role is to:
+1. Analyze evidence documents thoroughly and systematically
+2. Evaluate how well evidence supports specific audit task requirements
+3. Identify strengths, weaknesses, and missing elements
+4. Provide detailed confidence assessments and recommendations
+5. Generate comprehensive reports with actionable insights
+
+For each analysis:
+- Break down complex documents into logical sections
+- Cross-reference requirements against evidence
+- Provide specific examples and citations
+- Assess completeness and quality
+- Generate clear recommendations (accept/reject/request_additional)
+
+Be thorough, objective, and provide detailed reasoning for all assessments."""
+            )
+
+        self.options = options
+        self.client = None
+        self.current_analysis_id = None
+
+        logger.info("[INIT] Claude Code Evidence Agent initialized")
+
+    async def analyze_evidence(self,
+                             file_content: Union[bytes, str],
+                             filename: str,
+                             task_description: str,
+                             task_context: Dict[str, Any],
+                             user_description: str = "") -> Dict[str, Any]:
+        """
+        Analyze evidence using Claude Code SDK agent capabilities.
+
+        Args:
+            file_content: Raw file content
+            filename: Name of the evidence file
+            task_description: Description of the audit task
+            task_context: Context about the task (department, type, etc.)
+            user_description: User's explanation of the evidence
+
+        Returns:
+            Comprehensive analysis result
+        """
+        analysis_start_time = time.time()
+        self.current_analysis_id = f"analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        logger.info(f"[START] Starting Claude Code agent analysis: {self.current_analysis_id}")
+        logger.info(f"[DOCUMENT] Analyzing '{filename}' for task: {task_description[:50]}...")
+
+        try:
+            # Create temporary file for the evidence
+            temp_file_path = await self._create_temp_evidence_file(file_content, filename)
+
+            # Initialize Claude Code client
+            async with ClaudeSDKClient(options=self.options) as client:
+                self.client = client
+
+                # Create comprehensive analysis prompt
+                analysis_prompt = self._create_analysis_prompt(
+                    temp_file_path, task_description, task_context, user_description
+                )
+
+                logger.info("[AGENT] Sending analysis request to Claude Code agent...")
+                logger.info(f"[AGENT_PROMPT] Task: {task_description}")
+                logger.info(f"[AGENT_PROMPT] Context: Department={task_context.get('department')}, Type={task_context.get('implementation_type')}")
+                logger.info(f"[AGENT_PROMPT] User Description: {user_description}")
+                logger.info(f"[AGENT_PROMPT] Evidence File: {temp_file_path}")
+
+                # Send analysis request to the agent
+                await client.query(analysis_prompt)
+
+                # Collect agent response
+                full_response = ""
+                tool_results = []
+
+                async for message in client.receive_response():
+                    if isinstance(message, AssistantMessage):
+                        for block in message.content:
+                            if isinstance(block, TextBlock):
+                                # Log agent's thinking and responses
+                                if block.text.strip():
+                                    logger.info(f"[AGENT_RESPONSE] {block.text[:200]}{'...' if len(block.text) > 200 else ''}")
+                                full_response += block.text
+                            elif isinstance(block, ToolUseBlock):
+                                # Log detailed tool usage
+                                logger.info(f"[TOOL_USE] Agent using tool: {block.name}")
+
+                                # Log specific tool inputs based on tool type
+                                if block.name == "Bash":
+                                    command = block.input.get("command", "")
+                                    logger.info(f"[BASH_COMMAND] Executing: {command}")
+                                elif block.name == "Write":
+                                    file_path = block.input.get("file_path", "")
+                                    content_preview = block.input.get("content", "")[:100]
+                                    logger.info(f"[WRITE_FILE] Writing to: {file_path}")
+                                    logger.info(f"[WRITE_CONTENT] Content preview: {content_preview}...")
+                                elif block.name == "Read":
+                                    file_path = block.input.get("file_path", "")
+                                    logger.info(f"[READ_FILE] Reading: {file_path}")
+                                elif block.name == "Grep":
+                                    pattern = block.input.get("pattern", "")
+                                    path = block.input.get("path", "")
+                                    logger.info(f"[GREP_SEARCH] Searching for '{pattern}' in {path}")
+                                elif block.name == "Glob":
+                                    pattern = block.input.get("pattern", "")
+                                    logger.info(f"[GLOB_SEARCH] Finding files matching: {pattern}")
+                                else:
+                                    # Log full input for other tools
+                                    logger.info(f"[TOOL_INPUT] {block.input}")
+
+                                tool_results.append({
+                                    "tool": block.name,
+                                    "input": block.input
+                                })
+                            elif isinstance(block, ToolResultBlock):
+                                # Log tool results
+                                result_preview = str(block.content)[:300] if block.content else "No content"
+                                logger.info(f"[TOOL_RESULT] Tool output: {result_preview}{'...' if len(str(block.content)) > 300 else ''}")
+
+                                if block.is_error:
+                                    logger.error(f"[TOOL_ERROR] Tool execution failed: {block.content}")
+                    elif isinstance(message, ResultMessage):
+                        logger.info(f"[RESULT] Analysis completed - Duration: {message.duration_ms}ms")
+                        if message.is_error:
+                            logger.error(f"[ANALYSIS_ERROR] Analysis failed: {message.result}")
+                        break
+
+                # Parse and structure the results
+                analysis_result = await self._parse_agent_response(
+                    full_response, tool_results, analysis_start_time
+                )
+
+                # Clean up temporary file
+                await self._cleanup_temp_file(temp_file_path)
+
+                analysis_result['analysis_id'] = self.current_analysis_id
+                analysis_result['agent_type'] = 'claude_code_sdk'
+                analysis_result['processing_time'] = time.time() - analysis_start_time
+
+                logger.info(f"[SUCCESS] Claude Code agent analysis completed in {analysis_result['processing_time']:.2f}s")
+                return analysis_result
+
+        except Exception as e:
+            logger.error(f"[ERROR] Claude Code agent analysis failed: {str(e)}")
+            return {
+                "error": f"Agent analysis failed: {str(e)}",
+                "analysis_id": self.current_analysis_id,
+                "processing_time": time.time() - analysis_start_time
+            }
+
+    async def _create_temp_evidence_file(self, file_content: Union[bytes, str], filename: str) -> str:
+        """Create a temporary file with the evidence content."""
+
+        # Create temporary directory for analysis
+        temp_dir = Path(tempfile.gettempdir()) / "claude_code_evidence"
+        temp_dir.mkdir(exist_ok=True)
+
+        # Create temp file with original filename
+        temp_file_path = temp_dir / f"{self.current_analysis_id}_{filename}"
+
+        # Write content to temporary file
+        if isinstance(file_content, bytes):
+            temp_file_path.write_bytes(file_content)
+        else:
+            temp_file_path.write_text(file_content, encoding='utf-8')
+
+        logger.info(f"[TEMP_FILE] Created temporary evidence file: {temp_file_path}")
+        return str(temp_file_path)
+
+    def _create_analysis_prompt(self,
+                               file_path: str,
+                               task_description: str,
+                               task_context: Dict[str, Any],
+                               user_description: str) -> str:
+        """Create a comprehensive analysis prompt for the Claude Code agent."""
+
+        return f"""
+I need you to perform a comprehensive evidence analysis using your available tools. Here's what I need:
+
+EVIDENCE FILE: {file_path}
+AUDIT TASK: {task_description}
+
+TASK CONTEXT:
+- Department: {task_context.get('department', 'Not specified')}
+- Implementation Type: {task_context.get('implementation_type', 'Not specified')}
+- Division: {task_context.get('division', 'Not specified')}
+- Requires Collaboration: {task_context.get('requires_collaboration', False)}
+
+USER EXPLANATION: {user_description if user_description else 'No explanation provided'}
+
+ANALYSIS INSTRUCTIONS:
+
+1. **INSTALL REQUIRED LIBRARIES**: If needed, use Bash to install PDF processing libraries like pdfplumber, pymupdf, or other tools
+2. **WRITE EXTRACTION SCRIPTS**: Create Python scripts to properly extract text from the PDF using advanced libraries
+3. **EXECUTE CODE**: Run the extraction scripts to get readable content from the document
+4. **READ THE EVIDENCE FILE**: Use multiple approaches (Read tool + custom scripts) to examine the document thoroughly
+5. **DOCUMENT ANALYSIS**: Break down the document structure and key content areas
+6. **REQUIREMENTS MAPPING**: Compare evidence against the specific audit task requirements
+7. **QUALITY ASSESSMENT**: Evaluate completeness, relevance, and strength of evidence
+8. **DETAILED FINDINGS**: Identify specific supporting elements and gaps
+9. **COMPREHENSIVE REPORT**: Generate final assessment with confidence scores
+
+IMPORTANT: If the basic Read tool doesn't extract text properly from the PDF, write and execute Python code using advanced PDF libraries to extract the content. You have full code execution capabilities - use them!
+
+Please provide your analysis in this JSON format at the end:
+
+```json
+{{
+    "is_valid": true/false,
+    "confidence": 0.0-1.0,
+    "evidence_quality": "high/medium/low",
+    "reasoning": "detailed explanation of your analysis and decision",
+    "strengths": ["specific strengths found in the evidence"],
+    "missing_elements": ["specific requirements not addressed"],
+    "recommendations": ["actionable recommendations"],
+    "recommendation": "accept/reject/request_additional",
+    "detailed_findings": {{
+        "document_structure": "description of document organization",
+        "key_sections": ["list of important sections identified"],
+        "compliance_indicators": ["specific elements showing compliance"],
+        "concerns": ["areas of concern or potential issues"],
+        "supporting_evidence": ["specific examples that support the task"]
+    }},
+    "analysis_metadata": {{
+        "document_type": "detected document type",
+        "content_length": "approximate content size",
+        "sections_analyzed": "number of sections examined",
+        "tools_used": ["list of tools you used in analysis"]
+    }}
+}}
+```
+
+Start by reading and analyzing the evidence document systematically.
+"""
+
+    async def _parse_agent_response(self,
+                                   response_text: str,
+                                   tool_results: List[Dict],
+                                   start_time: float) -> Dict[str, Any]:
+        """Parse the agent's response and extract structured analysis results."""
+
+        try:
+            # Try to extract JSON from the response
+            import re
+            json_match = re.search(r'```json\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+
+            if json_match:
+                json_str = json_match.group(1)
+                parsed_result = json.loads(json_str)
+                logger.info("[PARSE] Successfully extracted JSON analysis results")
+
+                # Add processing metadata
+                parsed_result['full_response'] = response_text
+                parsed_result['tool_operations'] = tool_results
+                parsed_result['analysis_method'] = 'claude_code_sdk_agent'
+
+                return parsed_result
+            else:
+                # Fallback: create structured result from text response
+                logger.warning("[PARSE] No JSON found, creating structured result from text")
+
+                return {
+                    "is_valid": self._extract_validity_from_text(response_text),
+                    "confidence": self._extract_confidence_from_text(response_text),
+                    "evidence_quality": self._extract_quality_from_text(response_text),
+                    "reasoning": response_text[:1000] + "..." if len(response_text) > 1000 else response_text,
+                    "strengths": self._extract_strengths_from_text(response_text),
+                    "missing_elements": self._extract_missing_from_text(response_text),
+                    "recommendations": self._extract_recommendations_from_text(response_text),
+                    "recommendation": self._extract_recommendation_from_text(response_text),
+                    "full_response": response_text,
+                    "tool_operations": tool_results,
+                    "analysis_method": "claude_code_sdk_agent_fallback"
+                }
+
+        except json.JSONDecodeError as e:
+            logger.error(f"[PARSE_ERROR] Failed to parse JSON: {str(e)}")
+            return {
+                "error": f"Failed to parse agent response: {str(e)}",
+                "full_response": response_text,
+                "tool_operations": tool_results
+            }
+
+    def _extract_validity_from_text(self, text: str) -> bool:
+        """Extract validity assessment from text response."""
+        text_lower = text.lower()
+        if "is_valid" in text_lower:
+            return "true" in text_lower or "valid" in text_lower
+        return "accept" in text_lower or "approve" in text_lower
+
+    def _extract_confidence_from_text(self, text: str) -> float:
+        """Extract confidence score from text response."""
+        import re
+        confidence_match = re.search(r'confidence[:\s]*([0-9.]+)', text.lower())
+        if confidence_match:
+            try:
+                return float(confidence_match.group(1))
+            except ValueError:
+                pass
+        return 0.7  # Default confidence
+
+    def _extract_quality_from_text(self, text: str) -> str:
+        """Extract evidence quality from text response."""
+        text_lower = text.lower()
+        if "high quality" in text_lower or "strong evidence" in text_lower:
+            return "high"
+        elif "low quality" in text_lower or "weak evidence" in text_lower:
+            return "low"
+        return "medium"
+
+    def _extract_strengths_from_text(self, text: str) -> List[str]:
+        """Extract strengths from text response."""
+        # Simple extraction - look for bullet points or numbered lists with positive indicators
+        strengths = []
+        lines = text.split('\n')
+        for line in lines:
+            if any(word in line.lower() for word in ['strength', 'good', 'strong', 'demonstrates', 'shows']):
+                if any(marker in line for marker in ['•', '-', '*']) or line.strip().startswith(tuple('123456789')):
+                    strengths.append(line.strip())
+        return strengths[:5]  # Limit to 5 items
+
+    def _extract_missing_from_text(self, text: str) -> List[str]:
+        """Extract missing elements from text response."""
+        missing = []
+        lines = text.split('\n')
+        for line in lines:
+            if any(word in line.lower() for word in ['missing', 'lack', 'absent', 'not found', 'incomplete']):
+                if any(marker in line for marker in ['•', '-', '*']) or line.strip().startswith(tuple('123456789')):
+                    missing.append(line.strip())
+        return missing[:5]  # Limit to 5 items
+
+    def _extract_recommendations_from_text(self, text: str) -> List[str]:
+        """Extract recommendations from text response."""
+        recommendations = []
+        lines = text.split('\n')
+        for line in lines:
+            if any(word in line.lower() for word in ['recommend', 'suggest', 'should', 'need to', 'consider']):
+                if any(marker in line for marker in ['•', '-', '*']) or line.strip().startswith(tuple('123456789')):
+                    recommendations.append(line.strip())
+        return recommendations[:5]  # Limit to 5 items
+
+    def _extract_recommendation_from_text(self, text: str) -> str:
+        """Extract final recommendation from text response."""
+        text_lower = text.lower()
+        if "reject" in text_lower or "not acceptable" in text_lower:
+            return "reject"
+        elif "accept" in text_lower or "approve" in text_lower:
+            return "accept"
+        return "request_additional"
+
+    async def _cleanup_temp_file(self, file_path: str):
+        """Clean up temporary files."""
+        try:
+            Path(file_path).unlink(missing_ok=True)
+            logger.info(f"[CLEANUP] Removed temporary file: {file_path}")
+        except Exception as e:
+            logger.warning(f"[CLEANUP] Failed to remove temp file: {str(e)}")
+
+    def get_analysis_status(self) -> Dict[str, Any]:
+        """Get current analysis status."""
+        return {
+            "analysis_id": self.current_analysis_id,
+            "agent_type": "claude_code_sdk",
+            "status": "active" if self.client else "idle"
+        }
+
+
+# Async wrapper for Flask integration
+class AsyncEvidenceAgent:
+    """Wrapper to make the async agent work with Flask."""
+
+    def __init__(self):
+        self.agent = ClaudeCodeEvidenceAgent()
+
+    def analyze_evidence_sync(self,
+                            file_content: Union[bytes, str],
+                            filename: str,
+                            task_description: str,
+                            task_context: Dict[str, Any],
+                            user_description: str = "") -> Dict[str, Any]:
+        """Synchronous wrapper for the async analyze_evidence method."""
+
+        # Run the async method in a new event loop
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            result = loop.run_until_complete(
+                self.agent.analyze_evidence(
+                    file_content, filename, task_description,
+                    task_context, user_description
+                )
+            )
+
+            loop.close()
+            return result
+
+        except Exception as e:
+            logger.error(f"[SYNC_WRAPPER] Error in async wrapper: {str(e)}")
+            return {
+                "error": f"Agent wrapper error: {str(e)}",
+                "analysis_method": "claude_code_sdk_error"
+            }
+
+
+# Test function
+async def test_claude_code_agent():
+    """Test the Claude Code evidence agent."""
+
+    print("[TEST] Testing Claude Code Evidence Agent")
+
+    # Sample test data
+    sample_document = """
+    SECURITY IMPLEMENTATION REPORT
+    ==============================
+
+    This report outlines the implementation of new security protocols
+    for data access controls and user authentication systems.
+
+    IMPLEMENTED MEASURES:
+    - Multi-factor authentication deployed
+    - Role-based access control implemented
+    - Security audit completed with 98% compliance
+    """
+
+    task_description = "Implement new security protocols for data access controls"
+    task_context = {
+        "department": "IT Security",
+        "implementation_type": "Security Enhancement",
+        "division": "Information Technology",
+        "requires_collaboration": True
+    }
+    user_description = "This document shows our security implementation results"
+
+    # Create and test agent
+    agent = ClaudeCodeEvidenceAgent()
+
+    result = await agent.analyze_evidence(
+        sample_document,
+        "security_implementation_report.txt",
+        task_description,
+        task_context,
+        user_description
+    )
+
+    print(f"[TEST] Analysis completed:")
+    print(f"  Valid: {result.get('is_valid', 'unknown')}")
+    print(f"  Confidence: {result.get('confidence', 0):.2f}")
+    print(f"  Quality: {result.get('evidence_quality', 'unknown')}")
+    print(f"  Processing time: {result.get('processing_time', 0):.2f}s")
+
+
+if __name__ == "__main__":
+    asyncio.run(test_claude_code_agent())
