@@ -332,7 +332,7 @@ class BedrockClient:
         logger.info(f"LLM_INPUT - Model: {self.model_id} - Prompt length: {len(prompt)} - Preview: {prompt[:500]}...")
         
         # Save full input to file
-        input_filename = f"llm_input_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}.txt"
+        input_filename = f"llm_input_logs/llm_input_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}.txt"
         with open(input_filename, 'w', encoding='utf-8') as f:
             f.write(f"=== LLM INPUT ===\n")
             f.write(f"Model: {self.model_id}\n")
@@ -383,7 +383,7 @@ class BedrockClient:
             logger.info(f"LLM_OUTPUT - Response length: {len(result_text)}")
             
             # Save full output to file
-            output_filename = f"llm_output_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}.txt"
+            output_filename = f"llm_output_logs/llm_output_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}.txt"
             with open(output_filename, 'w', encoding='utf-8') as f:
                 f.write(f"=== LLM OUTPUT ===\n")
                 f.write(f"Model: {self.model_id}\n")
