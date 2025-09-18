@@ -27,6 +27,9 @@ from claude_code_sdk import (
     ResultMessage
 )
 
+# Import PDF tools
+from pdf_tools import create_pdf_tools_server
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -44,6 +47,9 @@ class ClaudeCodeEvidenceAgent:
 
         # Configure default options if none provided
         if options is None:
+            # Create PDF tools server
+            pdf_server = create_pdf_tools_server()
+
             options = ClaudeCodeOptions(
                 allowed_tools=[
                     "Read",           # Read files
@@ -51,8 +57,10 @@ class ClaudeCodeEvidenceAgent:
                     "Bash",           # Execute commands and install libraries
                     "Glob",           # Find files
                     "Grep",           # Search content
-                    "WebFetch"        # Web research if needed
+                    "WebFetch",       # Web research if needed
+                    "mcp__pdf-tools__extract_pdf_text"  # PDF text extraction
                 ],
+                mcp_servers={"pdf-tools": pdf_server},  # Add PDF tools server
                 permission_mode="acceptEdits",  # Auto-accept file operations
                 system_prompt="""You are an expert evidence analysis agent specializing in audit compliance validation.
 
