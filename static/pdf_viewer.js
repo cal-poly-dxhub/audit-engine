@@ -150,6 +150,30 @@ class PDFViewer {
         }
     }
 
+    textExistsOnPage(textToFind, pageNumber) {
+        if (!this.pdfTextData || !this.pdfTextData[pageNumber - 1]) {
+            return false;
+        }
+
+        const pageData = this.pdfTextData[pageNumber - 1];
+        const fullPageText = pageData.full_text;
+
+        // Check if text exists in the full page text
+        const cleanSearchText = textToFind.toLowerCase().trim();
+        const fullTextLower = fullPageText.toLowerCase();
+
+        let startIndex = fullTextLower.indexOf(cleanSearchText);
+
+        if (startIndex === -1) {
+            // Try fuzzy matching with normalized whitespace
+            const normalizedText = fullPageText.replace(/\s+/g, ' ').toLowerCase();
+            const normalizedSearch = cleanSearchText.replace(/\s+/g, ' ');
+            startIndex = normalizedText.indexOf(normalizedSearch);
+        }
+
+        return startIndex !== -1;
+    }
+
     highlightText(textToFind, annotationType, annotation) {
         const pageNumber = this.currentPage;
 
@@ -229,8 +253,21 @@ class PDFViewer {
 
         // Calculate scale factor between PyMuPDF coordinates and canvas
         const pageData = this.pdfTextData[this.currentPage - 1];
-        const scaleX = this.canvas.offsetWidth / pageData.width;
-        const scaleY = this.canvas.offsetHeight / pageData.height;
+
+        // Check if canvas is visible and sized
+        let scaleX = this.canvas.offsetWidth / pageData.width;
+        let scaleY = this.canvas.offsetHeight / pageData.height;
+
+        // Fallback if canvas isn't properly sized (e.g., in collapsed accordion)
+        if (scaleX === 0 || scaleY === 0) {
+            // Use canvas client dimensions or fallback to natural dimensions
+            const canvasWidth = this.canvas.clientWidth || this.canvas.width || 800;
+            const canvasHeight = this.canvas.clientHeight || this.canvas.height || 600;
+            scaleX = canvasWidth / pageData.width;
+            scaleY = canvasHeight / pageData.height;
+
+            console.log('Canvas not visible, using fallback scale:', { scaleX, scaleY, canvasWidth, canvasHeight });
+        }
 
         // Convert PyMuPDF coordinates to canvas coordinates
         const x = bbox.x0 * scaleX;
@@ -445,13 +482,27 @@ window.pdfAnnotationSystem = {
         // Add text highlights for this page
         annotations.forEach((annotation, index) => {
             const citation = annotation.citation || {};
+            const textSnippet = citation.text_snippet;
 
-            // Use page number if available, otherwise show on all pages
-            const annotationPage = citation.page_number || 1;
+            if (!textSnippet || !textSnippet.trim()) {
+                return; // Skip annotations without text snippets
+            }
 
-            if (annotationPage === pageNumber || !citation.page_number) {
-                const textSnippet = citation.text_snippet;
-                if (textSnippet && textSnippet.trim()) {
+            // Use page number if available, otherwise try to find the text on this page
+            const annotationPage = citation.page_number;
+
+            if (annotationPage) {
+                // If we have a specific page number, only show on that page
+                if (annotationPage === pageNumber) {
+                    console.log('Highlighting annotation:', annotation.annotation_type, textSnippet.substring(0, 50) + '...');
+                    const success = viewer.highlightText(textSnippet, annotation.annotation_type, annotation);
+                    if (!success) {
+                        console.warn('Failed to highlight text:', textSnippet.substring(0, 50) + '...');
+                    }
+                }
+            } else {
+                // If no page number, first check if text exists on this page before trying to highlight
+                if (viewer.textExistsOnPage(textSnippet, pageNumber)) {
                     console.log('Highlighting annotation:', annotation.annotation_type, textSnippet.substring(0, 50) + '...');
                     const success = viewer.highlightText(textSnippet, annotation.annotation_type, annotation);
                     if (!success) {
