@@ -141,7 +141,7 @@ class PDFViewer {
 
             // Trigger annotation update for this page
             if (window.pdfAnnotationSystem) {
-                window.pdfAnnotationSystem.updateAnnotationsForPage(this.obsIdx, this.taskIdx, pageNumber);
+                window.pdfAnnotationSystem.updateAnnotationsForPage(this.obsIdx, this.taskIdx, pageNumber, this.docIndex);
             }
 
         } catch (error) {
