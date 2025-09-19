@@ -311,6 +311,14 @@ ANALYSIS INSTRUCTIONS:
 6. **DETAILED FINDINGS**: Identify specific supporting elements and gaps
 7. **COMPREHENSIVE REPORT**: Generate final assessment with confidence scores and citations
 
+EVALUATION APPROACH:
+- Use COMMON SENSE and GOOD FAITH interpretation when evaluating evidence
+- Consider the SPIRIT and INTENT of the task, not just literal word matching
+- Give REASONABLE BENEFIT OF THE DOUBT when evidence substantially addresses the task
+- Accept evidence that demonstrates MEANINGFUL PROGRESS or COMPLETION even if not perfectly comprehensive
+- Consider the USER'S EXPLANATION as valuable context for how the document relates to the task
+- Avoid being overly strict or pedantic - focus on whether the evidence reasonably demonstrates task fulfillment
+
 IMPORTANT:
 - DO NOT write or execute Python code - use the provided MCP PDF extraction tool instead
 - DO NOT install libraries or create scripts
@@ -576,6 +584,244 @@ Start by reading and analyzing the evidence document systematically.
         except Exception as e:
             logger.warning(f"[CLEANUP] Failed to remove temp file: {str(e)}")
 
+    async def analyze_multiple_evidence(self,
+                                      documents_content: List[Dict[str, Any]],
+                                      task_description: str,
+                                      task_context: Dict[str, Any],
+                                      user_description: str = "") -> Dict[str, Any]:
+        """
+        Analyze multiple evidence documents collectively using Claude Code SDK agent.
+
+        Args:
+            documents_content: List of document info with filename and content
+            task_description: Description of the audit task
+            task_context: Context about the task
+            user_description: User's explanation of the evidence
+
+        Returns:
+            Collective analysis result
+        """
+        analysis_start_time = time.time()
+        self.current_analysis_id = f"multi_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        logger.info(f"[START] Starting Claude Code multi-document analysis: {self.current_analysis_id}")
+
+        # Start comprehensive logging session
+        session_id = start_agent_session(
+            analysis_id=self.current_analysis_id,
+            agent_type="claude_code_sdk_multi",
+            task_description=task_description,
+            task_context=task_context,
+            user_description=user_description,
+            filename=f"multi_doc_{len(documents_content)}_files"
+        )
+
+        try:
+            # Create temporary files for all evidence documents
+            temp_file_paths = []
+
+            for i, doc in enumerate(documents_content):
+                temp_file_path = await self._create_temp_evidence_file(
+                    doc['content'], f"{i+1}_{doc['filename']}"
+                )
+                temp_file_paths.append(temp_file_path)
+
+            # Initialize Claude Code client
+            async with ClaudeSDKClient(options=self.options) as client:
+                self.client = client
+
+                # Create multi-document analysis prompt
+                analysis_prompt = self._create_multi_document_analysis_prompt(
+                    temp_file_paths, documents_content, task_description, task_context, user_description
+                )
+
+                logger.info("[AGENT] Sending multi-document analysis request to Claude Code agent...")
+
+                # Send analysis request to the agent
+                await client.query(analysis_prompt)
+
+                # Collect agent response
+                full_response = ""
+                tool_results = []
+
+                async for message in client.receive_response():
+                    if isinstance(message, AssistantMessage):
+                        for block in message.content:
+                            if isinstance(block, TextBlock):
+                                if block.text.strip():
+                                    logger.info(f"[AGENT_RESPONSE] {block.text[:200]}{'...' if len(block.text) > 200 else ''}")
+                                    log_agent_response(block.text)
+                                full_response += block.text
+                            elif isinstance(block, ToolUseBlock):
+                                tool_id = log_tool_start(block.name, block.input)
+                                logger.info(f"[TOOL_USE] Agent using tool: {block.name}")
+                                tool_results.append({
+                                    "tool": block.name,
+                                    "input": block.input,
+                                    "tool_id": tool_id
+                                })
+                            elif isinstance(block, ToolResultBlock):
+                                matching_tool = None
+                                for tool_result in reversed(tool_results):
+                                    if tool_result.get("tool_id"):
+                                        matching_tool = tool_result
+                                        break
+
+                                if block.is_error:
+                                    error_message = str(block.content)
+                                    logger.error(f"[TOOL_ERROR] Tool execution failed: {error_message}")
+                                    if matching_tool:
+                                        log_tool_error(matching_tool["tool_id"], error_message)
+                                else:
+                                    result_preview = str(block.content)[:300] if block.content else "No content"
+                                    logger.info(f"[TOOL_RESULT] Tool output: {result_preview}{'...' if len(str(block.content)) > 300 else ''}")
+                                    if matching_tool:
+                                        log_tool_complete(matching_tool["tool_id"], str(block.content))
+                    elif isinstance(message, ResultMessage):
+                        logger.info(f"[RESULT] Multi-document analysis completed - Duration: {message.duration_ms}ms")
+                        break
+
+                # Parse and structure the results
+                analysis_result = await self._parse_agent_response(
+                    full_response, tool_results, analysis_start_time
+                )
+
+                # Clean up temporary files
+                for temp_file_path in temp_file_paths:
+                    await self._cleanup_temp_file(temp_file_path)
+
+                analysis_result['analysis_id'] = self.current_analysis_id
+                analysis_result['agent_type'] = 'claude_code_sdk_multi'
+                analysis_result['processing_time'] = time.time() - analysis_start_time
+                analysis_result['document_count'] = len(documents_content)
+
+                logger.info(f"[SUCCESS] Claude Code multi-document analysis completed in {analysis_result['processing_time']:.2f}s")
+
+                # End logging session with success
+                end_agent_session(final_result=analysis_result)
+
+                return analysis_result
+
+        except Exception as e:
+            error_message = f"Multi-document agent analysis failed: {str(e)}"
+            logger.error(f"[ERROR] Claude Code multi-document analysis failed: {str(e)}")
+
+            # Clean up temp files on error
+            for temp_file_path in temp_file_paths:
+                await self._cleanup_temp_file(temp_file_path)
+
+            # End logging session with error
+            end_agent_session(error_message=error_message)
+
+            return {
+                "error": error_message,
+                "analysis_id": self.current_analysis_id,
+                "processing_time": time.time() - analysis_start_time
+            }
+
+    def _create_multi_document_analysis_prompt(self,
+                                             file_paths: List[str],
+                                             documents_content: List[Dict[str, Any]],
+                                             task_description: str,
+                                             task_context: Dict[str, Any],
+                                             user_description: str) -> str:
+        """Create a comprehensive multi-document analysis prompt for the Claude Code agent."""
+
+        files_list = "\n".join([f"- {path}" for path in file_paths])
+
+        return f"""
+I need you to perform a COLLECTIVE ANALYSIS of multiple evidence documents for a single audit task using your available tools.
+
+EVIDENCE FILES:
+{files_list}
+
+AUDIT TASK: {task_description}
+
+TASK CONTEXT:
+- Department: {task_context.get('department', 'Not specified')}
+- Implementation Type: {task_context.get('implementation_type', 'Not specified')}
+- Division: {task_context.get('division', 'Not specified')}
+- Requires Collaboration: {task_context.get('requires_collaboration', False)}
+
+USER EXPLANATION: {user_description if user_description else 'No explanation provided'}
+
+MULTI-DOCUMENT ANALYSIS INSTRUCTIONS:
+
+1. **EXTRACT AND READ ALL DOCUMENTS**: Use the PDF extraction tools to read all documents
+2. **INDIVIDUAL ANALYSIS**: Analyze each document separately against the task requirements
+3. **CROSS-DOCUMENT COMPARISON**: Compare and contrast findings across documents
+4. **COMPLEMENTARY EVIDENCE**: Identify how documents complement each other
+5. **CONSISTENCY ASSESSMENT**: Check for consistency or conflicts between documents
+6. **COMPREHENSIVE COVERAGE**: Evaluate if all task requirements are covered collectively
+7. **COLLECTIVE VALIDATION**: Make a final determination based on all documents together
+
+EVALUATION APPROACH:
+- Use COMMON SENSE and GOOD FAITH interpretation when evaluating evidence
+- Consider the SPIRIT and INTENT of the task, not just literal word matching
+- Give REASONABLE BENEFIT OF THE DOUBT when evidence substantially addresses the task
+- Accept evidence that demonstrates MEANINGFUL PROGRESS or COMPLETION even if not perfectly comprehensive
+- Consider the USER'S EXPLANATION as valuable context for how the documents relate to the task
+- Avoid being overly strict or pedantic - focus on whether the evidence reasonably demonstrates task fulfillment
+
+IMPORTANT:
+- Analyze ALL documents provided - don't skip any
+- Look for evidence that spans multiple documents
+- Identify gaps that might be filled by combining document insights
+- Consider document quality and relevance collectively
+- Provide specific cross-references between documents
+
+Please provide your analysis in this JSON format at the end:
+
+```json
+{{
+    "is_valid": true/false,
+    "confidence": 0.0-1.0,
+    "evidence_quality": "high/medium/low",
+    "reasoning": "detailed explanation of collective analysis and decision",
+    "strengths": ["collective strengths across all documents"],
+    "missing_elements": ["requirements not addressed by any document"],
+    "recommendations": ["actionable recommendations for the evidence package"],
+    "recommendation": "accept/reject/request_additional",
+    "document_synergy": "explanation of how documents work together",
+    "individual_document_summaries": [
+        {{
+            "filename": "document1.pdf",
+            "key_findings": ["main findings from this document"],
+            "contribution": "how this document contributes to task evidence",
+            "quality": "high/medium/low"
+        }}
+    ],
+    "cross_document_findings": [
+        {{
+            "finding": "description of finding that spans multiple documents",
+            "documents_involved": ["doc1.pdf", "doc2.pdf"],
+            "significance": "high/medium/low",
+            "explanation": "detailed explanation of the cross-document finding"
+        }}
+    ],
+    "collective_coverage": {{
+        "requirements_covered": ["list of requirements covered by the document set"],
+        "coverage_percentage": 0.0-1.0,
+        "coverage_gaps": ["requirements not covered by any document"],
+        "redundant_coverage": ["requirements covered by multiple documents"]
+    }},
+    "annotations": [
+        {{
+            "document": "filename",
+            "text_snippet": "exact text from document to highlight",
+            "annotation_type": "support|concern|correction|clarification|reference|missing",
+            "severity": "info|low|medium|high|critical",
+            "title": "brief title for annotation",
+            "message": "detailed explanation or comment",
+            "cross_document_reference": "reference to related content in other documents (optional)"
+        }}
+    ]
+}}
+```
+
+Start by reading and analyzing all evidence documents systematically, then provide the collective assessment.
+"""
+
     def get_analysis_status(self) -> Dict[str, Any]:
         """Get current analysis status."""
         return {
@@ -620,6 +866,34 @@ class AsyncEvidenceAgent:
             return {
                 "error": f"Agent wrapper error: {str(e)}",
                 "analysis_method": "claude_code_sdk_error"
+            }
+
+    def analyze_multiple_evidence_sync(self,
+                                     documents_content: List[Dict[str, Any]],
+                                     task_description: str,
+                                     task_context: Dict[str, Any],
+                                     user_description: str = "") -> Dict[str, Any]:
+        """Synchronous wrapper for multi-document analysis."""
+
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            result = loop.run_until_complete(
+                self.agent.analyze_multiple_evidence(
+                    documents_content, task_description,
+                    task_context, user_description
+                )
+            )
+
+            loop.close()
+            return result
+
+        except Exception as e:
+            logger.error(f"[MULTI_SYNC_WRAPPER] Error in multi-document async wrapper: {str(e)}")
+            return {
+                "error": f"Multi-document agent wrapper error: {str(e)}",
+                "analysis_method": "claude_code_sdk_multi_error"
             }
 
 

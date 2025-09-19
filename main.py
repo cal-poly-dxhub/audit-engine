@@ -201,20 +201,39 @@ class AuditDocumentProcessor:
             return [observation]
 
         prompt = f"""
-        Analyze this management response and identify natural breakpoints for implementation tracking.
-        
+        Analyze this management response and extract only the ACTIONABLE IMPLEMENTATION CONTENT for tracking.
+
         Management Response:
         {management_response}
 
-        Split this response into discrete implementation tasks based on:
-        1. Sentences starting with "Additionally", "Further", "Also", "We will", etc.
-        2. Different initiatives or actions described
-        3. Different responsible parties mentioned
-        4. Different timelines mentioned
-        5. Numbered or bulleted items
+        SMART EXTRACTION RULES:
+        1. **IGNORE acknowledgment phrases** like "We concur", "We agree", "We acknowledge", "As recommended"
+        2. **IGNORE general statements** that don't describe specific actions or deliverables
+        3. **FOCUS ON ACTION VERBS** like "will implement", "is meeting", "creating", "developing", "establishing"
+        4. **EXTRACT actionable commitments**, not opinions or agreements
+        5. **GROUP related actions** together into logical implementation units
 
-        CRITICAL: Each task should be a VERBATIM excerpt from the management response.
-        Do not paraphrase or summarize - use the EXACT text, just split intelligently.
+        Split actionable content into discrete implementation tasks based on:
+        - **Specific actions being taken** (meetings, policy creation, system updates, etc.)
+        - **Deliverables being produced** (policies, procedures, reports, etc.)
+        - **Process improvements being implemented**
+        - **Different responsible parties mentioned**
+        - **Different timelines mentioned**
+        - **Numbered or bulleted items**
+
+        IMPORTANT GUIDELINES:
+        - SKIP non-actionable acknowledgment text ("We concur", "We agree", etc.)
+        - FOCUS on what is actually being DONE, not what is being acknowledged
+        - Use VERBATIM text but only for the actionable portions
+        - GROUP related actions together into coherent work packages
+
+        COVERAGE REQUIREMENT: Ensure all ACTIONABLE content is captured, but exclude acknowledgment statements and general agreements that don't describe specific work.
+
+        EXAMPLE:
+        Given: "We concur with the finding. As recommended, the University Controller is meeting with the Property Accounting Office to streamline the process..."
+
+        WRONG: Task 1: "We concur with the finding."
+        CORRECT: Task 1: "The University Controller is meeting with the Property Accounting Office to streamline the process..."
 
         For each task segment, provide:
         - task_text: The EXACT text segment from the management response

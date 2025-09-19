@@ -47,6 +47,9 @@ logger = logging.getLogger(__name__)
 current_progress = {"message": "Ready", "step": 0, "total": 0}
 app_data = {}
 
+# Store multiple evidence documents per task
+task_evidence_store = {}  # Format: {"obs_idx-task_idx": [{"file_info": {...}, "validation_result": {...}}, ...]}
+
 # Import existing classes from app.py
 from app import BedrockClient, AuditDocumentProcessor, log_step, log_request
 
@@ -84,6 +87,14 @@ USER EXPLANATION: {user_description if user_description else 'No explanation pro
 
 EVIDENCE DOCUMENT TEXT:
 {pdf_text[:4000]}...
+
+EVALUATION APPROACH:
+- Use COMMON SENSE and GOOD FAITH interpretation when evaluating evidence
+- Consider the SPIRIT and INTENT of the task, not just literal word matching
+- Give REASONABLE BENEFIT OF THE DOUBT when evidence substantially addresses the task
+- Accept evidence that demonstrates MEANINGFUL PROGRESS or COMPLETION even if not perfectly comprehensive
+- Consider the USER'S EXPLANATION as valuable context for how the document relates to the task
+- Avoid being overly strict or pedantic - focus on whether the evidence reasonably demonstrates task fulfillment
 
 Evaluate if this evidence document adequately demonstrates completion of the audit task. Consider the user's explanation of how the document provides evidence. Return JSON:
 {{
@@ -141,6 +152,14 @@ TASK CONTEXT:
 - Requires Collaboration: {task_context.get('requires_collaboration', False)}
 
 USER EXPLANATION: {user_description if user_description else 'No explanation provided'}
+
+EVALUATION APPROACH:
+- Use COMMON SENSE and GOOD FAITH interpretation when evaluating evidence
+- Consider the SPIRIT and INTENT of the task, not just literal word matching
+- Give REASONABLE BENEFIT OF THE DOUBT when evidence substantially addresses the task
+- Accept evidence that demonstrates MEANINGFUL PROGRESS or COMPLETION even if not perfectly comprehensive
+- Consider the USER'S EXPLANATION as valuable context for how the image relates to the task
+- Avoid being overly strict or pedantic - focus on whether the evidence reasonably demonstrates task fulfillment
 
 First describe what you see in the image, then evaluate if this visual evidence adequately demonstrates completion of the audit task. Consider the user's explanation of how the image provides evidence.
 
@@ -346,6 +365,135 @@ Coordinates should be normalized (0-1). Be precise with bounding boxes.
             logger.error(f"Error in agentic evidence validation: {str(e)}")
             return {"error": f"Enhanced validation failed: {str(e)}"}
 
+    def validate_multiple_evidence_collective(self, documents_content: List[dict], task_description: str, task_context: dict, user_description: str = "") -> dict:
+        """
+        Perform collective analysis of multiple evidence documents for a single task.
+
+        This method analyzes all documents together to:
+        - Identify complementary evidence across documents
+        - Check for consistency between documents
+        - Provide comprehensive task completion assessment
+        - Generate consolidated recommendations
+
+        Args:
+            documents_content: List of document info with content and individual results
+            task_description: Description of the audit task
+            task_context: Context about the task
+            user_description: User's explanation of the evidence
+
+        Returns:
+            Collective validation result
+        """
+        try:
+            logger.info(f"Starting collective analysis of {len(documents_content)} documents")
+
+            # Prepare combined analysis using Claude Code SDK agent
+            combined_content = ""
+            document_summaries = []
+
+            for i, doc in enumerate(documents_content):
+                doc_summary = f"\nDOCUMENT {i+1}: {doc['filename']}\n{'='*50}\n"
+
+                # Add individual analysis summary
+                individual_result = doc.get('individual_result', {})
+                if individual_result.get('reasoning'):
+                    doc_summary += f"Individual Analysis: {individual_result['reasoning'][:200]}...\n"
+
+                document_summaries.append(doc_summary)
+                combined_content += doc_summary
+
+            # Create collective analysis prompt
+            collective_prompt = f"""
+Perform a COLLECTIVE ANALYSIS of multiple evidence documents for a single audit task.
+
+TASK DESCRIPTION: {task_description}
+
+TASK CONTEXT:
+- Department: {task_context.get('department', 'Not specified')}
+- Implementation Type: {task_context.get('implementation_type', 'Not specified')}
+- Division: {task_context.get('division', 'Not specified')}
+- Requires Collaboration: {task_context.get('requires_collaboration', False)}
+
+USER EXPLANATION: {user_description if user_description else 'No explanation provided'}
+
+DOCUMENTS TO ANALYZE:
+{combined_content}
+
+COLLECTIVE ANALYSIS INSTRUCTIONS:
+
+1. **CROSS-DOCUMENT ANALYSIS**: Examine how the documents work together
+2. **COMPLEMENTARY EVIDENCE**: Identify how documents complement each other
+3. **CONSISTENCY CHECK**: Look for consistency or conflicts between documents
+4. **COMPREHENSIVE COVERAGE**: Assess if all task requirements are covered collectively
+5. **QUALITY ASSESSMENT**: Evaluate the overall strength of the evidence package
+6. **FINAL DETERMINATION**: Make a collective validation decision
+
+EVALUATION APPROACH:
+- Use COMMON SENSE and GOOD FAITH interpretation when evaluating evidence
+- Consider the SPIRIT and INTENT of the task, not just literal word matching
+- Give REASONABLE BENEFIT OF THE DOUBT when evidence substantially addresses the task
+- Accept evidence that demonstrates MEANINGFUL PROGRESS or COMPLETION even if not perfectly comprehensive
+- Consider the USER'S EXPLANATION as valuable context for how the documents relate to the task
+- Avoid being overly strict or pedantic - focus on whether the evidence reasonably demonstrates task fulfillment
+
+Provide your analysis in this JSON format:
+
+```json
+{{
+    "is_valid": true/false,
+    "confidence": 0.0-1.0,
+    "evidence_quality": "high/medium/low",
+    "reasoning": "detailed explanation of collective analysis and decision",
+    "strengths": ["collective strengths across all documents"],
+    "missing_elements": ["requirements still not addressed by any document"],
+    "recommendations": ["actionable recommendations for the evidence package"],
+    "recommendation": "accept/reject/request_additional",
+    "document_synergy": "how documents work together",
+    "cross_document_findings": [
+        {{
+            "finding": "description of finding across documents",
+            "documents_involved": ["doc1.pdf", "doc2.pdf"],
+            "significance": "high/medium/low"
+        }}
+    ],
+    "collective_coverage": {{
+        "requirements_covered": ["list of requirements covered by the document set"],
+        "coverage_percentage": 0.0-1.0,
+        "coverage_gaps": ["requirements not covered by any document"]
+    }}
+}}
+```
+
+Focus on the collective strength and coverage of all documents together.
+"""
+
+            # Use bedrock client for collective analysis
+            collective_response = self.bedrock_client.invoke_model_structured(
+                collective_prompt, None, max_tokens=3000
+            )
+
+            # Parse JSON response
+            import re
+            json_match = re.search(r'\{.*\}', collective_response, re.DOTALL)
+            if json_match:
+                collective_result = json.loads(json_match.group())
+
+                # Add metadata
+                collective_result['analysis_method'] = 'collective_multi_document'
+                collective_result['document_count'] = len(documents_content)
+                collective_result['processing_time'] = time.time()
+
+                logger.info(f"Collective analysis completed for {len(documents_content)} documents")
+                logger.info(f"Collective validity: {collective_result.get('is_valid')}, Confidence: {collective_result.get('confidence', 0):.2f}")
+
+                return collective_result
+            else:
+                return {"error": "Could not parse collective analysis response"}
+
+        except Exception as e:
+            logger.error(f"Error in collective evidence validation: {str(e)}")
+            return {"error": f"Collective validation failed: {str(e)}"}
+
 # Initialize components
 bedrock_client = BedrockClient()
 processor = AuditDocumentProcessor(bedrock_client)
@@ -404,16 +552,59 @@ def upload_audit():
                         if observation.get('management_response'):
                             # Use the existing task extraction prompt from main app
                             task_prompt = f"""
-Break down this management response into individual, actionable tasks. Each task should be a specific action item that can be tracked and completed independently.
+Analyze this management response and extract only the ACTIONABLE IMPLEMENTATION CONTENT for tracking.
 
 Management Response:
 {observation.get('management_response', '')}
+
+SMART EXTRACTION RULES:
+1. **IGNORE acknowledgment phrases** like "We concur", "We agree", "We acknowledge", "As recommended"
+2. **IGNORE general statements** that don't describe specific actions or deliverables
+3. **FOCUS ON ACTION VERBS** like "will implement", "is meeting", "creating", "developing", "establishing"
+4. **EXTRACT actionable commitments**, not opinions or agreements
+5. **GROUP related actions** together into logical implementation units
+
+Create discrete implementation tasks by identifying:
+- **Specific actions being taken** (meetings, policy creation, system updates, etc.)
+- **Deliverables being produced** (policies, procedures, reports, etc.)
+- **Process improvements being implemented**
+- **System or procedural changes being made**
+
+IMPORTANT GUIDELINES:
+- SKIP non-actionable acknowledgment text ("We concur", "We agree", etc.)
+- FOCUS on what is actually being DONE, not what is being acknowledged
+- GROUP related actions together into coherent work packages
+- Each task should represent a meaningful, trackable implementation effort
+- Aim for 2-6 substantial actionable tasks
+- Use VERBATIM text but only for the actionable portions
+
+COVERAGE REQUIREMENT: Ensure all ACTIONABLE content is captured, but exclude acknowledgment statements and general agreements that don't describe specific work.
+
+For each task segment, provide:
+- task_text: The EXACT text segment(s) from the management response grouped together as one logical task
+- inferred_department: Department likely responsible [Inferred from context]
+- implementation_type: Type of action (e.g., "Process Improvement", "Policy Change", etc.)
+- requires_collaboration: true/false based on whether multiple parties are mentioned
+- inferred_division: Best match based on context
+- inferred_vp: Best match based on context
+- inferred_cabinet_member: Best match based on context
+- contact: ""
+- due_date: ""
+
+COVERAGE VERIFICATION: Before finalizing your tasks, review the management response to ensure all ACTIONABLE content is captured, but exclude non-actionable acknowledgments.
+
+EXAMPLE:
+Given: "We concur with the finding. As recommended, the University Controller is meeting with the Property Accounting Office to streamline the process for adding and removing assets to/from the Asset Management System. This includes creating formal policies in order to ensure the campus is in compliance with respective executive orders and campus interest."
+
+WRONG: Task 1: "We concur with the finding." Task 2: "As recommended, the University Controller is meeting with..."
+
+CORRECT: Task 1: "The University Controller is meeting with the Property Accounting Office to streamline the process for adding and removing assets to/from the Asset Management System. This includes creating formal policies in order to ensure the campus is in compliance with respective executive orders and campus interest."
 
 Return a JSON object with this structure:
 {{
     "tasks": [
         {{
-            "task_text": "Specific actionable task description",
+            "task_text": "EXACT verbatim text segment(s) grouped as one logical implementation task",
             "inferred_department": "Department responsible",
             "implementation_type": "Process Improvement",
             "contact": "",
@@ -425,12 +616,6 @@ Return a JSON object with this structure:
         }}
     ]
 }}
-
-Guidelines:
-- Break complex responses into 2-5 specific tasks
-- Each task should be independently trackable
-- Use clear, actionable language
-- Infer the responsible department from context
 """
                             
                             tasks_result = processor.bedrock_client.invoke_model_structured(
@@ -565,6 +750,25 @@ def upload_evidence_agent():
             evidence_file, task_description, task_context, user_description, use_agentic
         )
 
+        # Store evidence in multi-document store
+        task_key = f"{obs_idx}-{task_idx}"
+        if task_key not in task_evidence_store:
+            task_evidence_store[task_key] = []
+
+        evidence_entry = {
+            "file_info": {
+                "filename": evidence_file.filename,
+                "timestamp": datetime.now().isoformat(),
+                "user_description": user_description
+            },
+            "validation_result": result
+        }
+        task_evidence_store[task_key].append(evidence_entry)
+
+        # Add evidence count to result
+        result['evidence_count'] = len(task_evidence_store[task_key])
+        result['evidence_index'] = len(task_evidence_store[task_key]) - 1
+
         # Log agentic evidence validation
         interaction_logger.log_manual_edit(
             session_id, 'evidence_upload_agent', obs_idx, task_idx,
@@ -677,6 +881,129 @@ def get_pdf_text_data(filename):
     except Exception as e:
         logger.error(f"Error extracting PDF text data: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/upload_multiple_evidence', methods=['POST'])
+def upload_multiple_evidence():
+    """Upload and validate multiple evidence documents for a single task"""
+    session_id = session.get('session_id', 'unknown')
+
+    try:
+        # Get form data
+        obs_idx = int(request.form.get('obs_idx'))
+        task_idx = int(request.form.get('task_idx'))
+        task_description = request.form.get('task_description', '')
+        task_context = json.loads(request.form.get('task_context', '{}'))
+        user_description = request.form.get('user_description', '')
+
+        # Get multiple files
+        evidence_files = request.files.getlist('evidence_files')
+        if not evidence_files:
+            return jsonify({'error': 'No evidence files uploaded'}), 400
+
+        # Validate file count (limit to reasonable number)
+        if len(evidence_files) > 10:
+            return jsonify({'error': 'Too many files. Maximum 10 evidence documents per task.'}), 400
+
+        results = []
+        all_documents_content = []
+
+        # Process each file individually first
+        for i, evidence_file in enumerate(evidence_files):
+            if evidence_file.filename == '':
+                continue
+
+            file_content = evidence_file.read()
+            evidence_file.seek(0)  # Reset for potential reuse
+
+            # Individual validation
+            result = evidence_validator.validate_evidence_with_agent(
+                evidence_file, task_description, task_context,
+                f"Document {i+1}: {user_description}", True
+            )
+
+            # Store document content for collective analysis
+            all_documents_content.append({
+                'filename': evidence_file.filename,
+                'content': file_content,
+                'individual_result': result
+            })
+
+            results.append({
+                'filename': evidence_file.filename,
+                'result': result,
+                'document_index': i
+            })
+
+        # Perform collective analysis using Claude Code SDK agent
+        collective_result = evidence_validator.claude_code_agent.analyze_multiple_evidence_sync(
+            all_documents_content, task_description, task_context, user_description
+        )
+
+        # Store in multi-document store
+        task_key = f"{obs_idx}-{task_idx}"
+        task_evidence_store[task_key] = [{
+            "file_info": {
+                "filenames": [f['filename'] for f in all_documents_content],
+                "timestamp": datetime.now().isoformat(),
+                "user_description": user_description,
+                "is_multi_document": True
+            },
+            "validation_result": collective_result,
+            "individual_results": results
+        }]
+
+        collective_result['evidence_count'] = len(evidence_files)
+        collective_result['individual_results'] = results
+
+        # Log multi-document validation
+        interaction_logger.log_manual_edit(
+            session_id, 'multi_evidence_upload', obs_idx, task_idx,
+            'multi_document_validation', user_description, json.dumps(collective_result)
+        )
+
+        return jsonify(collective_result)
+
+    except Exception as e:
+        return jsonify({'error': f'Error in multi-document validation: {str(e)}'}), 500
+
+@app.route('/get_task_evidence/<int:obs_idx>/<int:task_idx>')
+def get_task_evidence(obs_idx, task_idx):
+    """Get all evidence documents for a specific task"""
+    try:
+        task_key = f"{obs_idx}-{task_idx}"
+        evidence_list = task_evidence_store.get(task_key, [])
+
+        return jsonify({
+            'success': True,
+            'evidence_count': len(evidence_list),
+            'evidence_documents': evidence_list
+        })
+    except Exception as e:
+        return jsonify({'error': f'Error retrieving task evidence: {str(e)}'}), 500
+
+@app.route('/remove_evidence/<int:obs_idx>/<int:task_idx>/<int:evidence_idx>', methods=['DELETE'])
+def remove_evidence(obs_idx, task_idx, evidence_idx):
+    """Remove a specific evidence document from a task"""
+    try:
+        task_key = f"{obs_idx}-{task_idx}"
+        if task_key in task_evidence_store and evidence_idx < len(task_evidence_store[task_key]):
+            removed_evidence = task_evidence_store[task_key].pop(evidence_idx)
+
+            # Clean up associated files if needed
+            if 'pdf_filename' in removed_evidence.get('validation_result', {}):
+                pdf_filename = removed_evidence['validation_result']['pdf_filename']
+                pdf_path = os.path.join(os.getcwd(), 'temp_pdfs', pdf_filename)
+                if os.path.exists(pdf_path):
+                    os.remove(pdf_path)
+
+            return jsonify({
+                'success': True,
+                'remaining_count': len(task_evidence_store[task_key])
+            })
+        else:
+            return jsonify({'error': 'Evidence document not found'}), 404
+    except Exception as e:
+        return jsonify({'error': f'Error removing evidence: {str(e)}'}), 500
 
 @app.route('/progress')
 def get_progress():

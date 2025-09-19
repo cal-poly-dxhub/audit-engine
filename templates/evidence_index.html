@@ -46,6 +46,35 @@
             padding: 15px;
             border-radius: 5px;
         }
+
+        .evidence-upload-options .btn-group .btn {
+            border-radius: 0.375rem;
+        }
+
+        .multi-upload {
+            border-color: #28a745;
+        }
+
+        .multi-upload:hover {
+            border-color: #1e7e34;
+        }
+
+        .evidence-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .bg-light-success {
+            background-color: #d1f2eb !important;
+        }
+
+        .bg-light-danger {
+            background-color: #fadbd8 !important;
+        }
+
+        .accordion-button:not(.collapsed) {
+            background-color: #e3f2fd;
+        }
     </style>
 
     <!-- Annotation System Styles -->
@@ -206,46 +235,92 @@
                         </div>
                     </div>
                     
-                    <div class="evidence-upload-area" onclick="document.getElementById('evidence-${obsIdx}-${taskIdx}').click()">
+                    <!-- Upload Options -->
+                    <div class="evidence-upload-options mb-3">
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-outline-primary active" onclick="showSingleUpload(${obsIdx}, ${taskIdx})" id="single-btn-${obsIdx}-${taskIdx}">
+                                <i class="fas fa-file me-1"></i>Single Document
+                            </button>
+                            <button type="button" class="btn btn-outline-success" onclick="showMultiUpload(${obsIdx}, ${taskIdx})" id="multi-btn-${obsIdx}-${taskIdx}">
+                                <i class="fas fa-files me-1"></i>Multiple Documents
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Single Document Upload -->
+                    <div class="evidence-upload-area single-upload" id="single-upload-${obsIdx}-${taskIdx}" onclick="document.getElementById('evidence-${obsIdx}-${taskIdx}').click()">
                         <i class="fas fa-cloud-upload-alt fa-2x text-muted mb-2"></i>
-                        <p class="mb-0">Click to upload evidence (PDF or Image)</p>
+                        <p class="mb-0">Click to upload single evidence document</p>
                         <small class="text-muted">Supported formats: PDF, JPG, PNG, GIF, WebP</small>
                     </div>
-                    
-                    <input type="file" id="evidence-${obsIdx}-${taskIdx}" style="display: none;" 
-                           accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" 
-                           onchange="showDescriptionModal(${obsIdx}, ${taskIdx}, this)">
-                    
+
+                    <!-- Multiple Documents Upload -->
+                    <div class="evidence-upload-area multi-upload" id="multi-upload-${obsIdx}-${taskIdx}" style="display: none;" onclick="document.getElementById('evidence-multi-${obsIdx}-${taskIdx}').click()">
+                        <i class="fas fa-cloud-upload-alt fa-2x text-muted mb-2"></i>
+                        <p class="mb-0">Click to upload multiple evidence documents</p>
+                        <small class="text-muted">Select multiple files (Max 10 documents) - Ctrl+Click or Cmd+Click to select multiple</small>
+                    </div>
+
+                    <input type="file" id="evidence-${obsIdx}-${taskIdx}" style="display: none;"
+                           accept=".pdf,.jpg,.jpeg,.png,.gif,.webp"
+                           onchange="showDescriptionModal(${obsIdx}, ${taskIdx}, this, false)">
+
+                    <input type="file" id="evidence-multi-${obsIdx}-${taskIdx}" style="display: none;"
+                           accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" multiple
+                           onchange="showDescriptionModal(${obsIdx}, ${taskIdx}, this, true)">
+
+                    <!-- Evidence Management Area -->
+                    <div id="evidence-management-${obsIdx}-${taskIdx}" class="evidence-management mt-3" style="display: none;">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="mb-0">Uploaded Evidence</h6>
+                            <span class="badge bg-info" id="evidence-count-${obsIdx}-${taskIdx}">0 documents</span>
+                        </div>
+                        <div id="evidence-list-${obsIdx}-${taskIdx}" class="evidence-list"></div>
+                        <button class="btn btn-success btn-sm mt-2" onclick="addMoreEvidence(${obsIdx}, ${taskIdx})">
+                            <i class="fas fa-plus me-1"></i>Add More Evidence
+                        </button>
+                    </div>
+
                     <div id="validation-result-${obsIdx}-${taskIdx}"></div>
                 </div>
             `;
         }
 
-        function showDescriptionModal(obsIdx, taskIdx, fileInput) {
-            const file = fileInput.files[0];
-            if (!file) return;
+        function showDescriptionModal(obsIdx, taskIdx, fileInput, isMultiple = false) {
+            const files = isMultiple ? Array.from(fileInput.files) : [fileInput.files[0]];
+            if (!files || files.length === 0) return;
+
+            const fileListHTML = files.map(file => `<li>${file.name}</li>`).join('');
+            const submitButtonText = isMultiple ? `Submit ${files.length} Evidence Documents` : 'Submit Evidence';
 
             // Create modal HTML
             const modalHTML = `
                 <div class="modal fade" id="descriptionModal" tabindex="-1">
-                    <div class="modal-dialog">
+                    <div class="modal-dialog modal-lg">
                         <div class="modal-content">
                             <div class="modal-header">
-                                <h5 class="modal-title">Evidence Description</h5>
+                                <h5 class="modal-title">${isMultiple ? 'Multiple ' : ''}Evidence Description</h5>
                                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                             </div>
                             <div class="modal-body">
-                                <p><strong>Selected file:</strong> ${file.name}</p>
+                                <p><strong>Selected file${isMultiple ? 's' : ''}:</strong></p>
+                                <ul>${fileListHTML}</ul>
                                 <div class="mb-3">
-                                    <label class="form-label">How does this document provide evidence for task completion?</label>
-                                    <textarea class="form-control" id="evidenceDescription" rows="3" 
-                                              placeholder="Explain how this document demonstrates that the audit task has been completed. Be specific about what the document shows and how it relates to the task requirements."></textarea>
+                                    <label class="form-label">How ${isMultiple ? 'do these documents provide' : 'does this document provide'} evidence for task completion?</label>
+                                    <textarea class="form-control" id="evidenceDescription" rows="4"
+                                              placeholder="Explain how ${isMultiple ? 'these documents demonstrate' : 'this document demonstrates'} that the audit task has been completed. Be specific about what ${isMultiple ? 'the documents show' : 'the document shows'} and how ${isMultiple ? 'they relate' : 'it relates'} to the task requirements.${isMultiple ? ' If documents are complementary, explain how they work together.' : ''}"></textarea>
                                 </div>
+                                ${isMultiple ? `
+                                <div class="alert alert-info">
+                                    <i class="fas fa-info-circle me-2"></i>
+                                    <strong>Multi-Document Analysis:</strong> The AI will analyze all documents together to provide a comprehensive validation, looking for complementary evidence and cross-document consistency.
+                                </div>
+                                ` : ''}
                             </div>
                             <div class="modal-footer">
                                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                <button type="button" class="btn btn-primary" onclick="submitEvidence(${obsIdx}, ${taskIdx}, '${file.name}')">
-                                    Submit Evidence
+                                <button type="button" class="btn btn-primary" onclick="submitEvidence(${obsIdx}, ${taskIdx}, ${isMultiple})">
+                                    ${submitButtonText}
                                 </button>
                             </div>
                         </div>
@@ -261,21 +336,22 @@
 
             // Add modal to body
             document.body.insertAdjacentHTML('beforeend', modalHTML);
-            
+
             // Show modal
             const modal = new bootstrap.Modal(document.getElementById('descriptionModal'));
             modal.show();
 
             // Store file reference
-            window.currentEvidenceFile = file;
+            window.currentEvidenceFiles = files;
+            window.currentIsMultiple = isMultiple;
         }
 
-        async function submitEvidence(obsIdx, taskIdx, filename) {
+        async function submitEvidence(obsIdx, taskIdx, isMultiple) {
             const description = document.getElementById('evidenceDescription').value.trim();
-            const file = window.currentEvidenceFile;
-            
-            if (!file) {
-                alert('File not found. Please try uploading again.');
+            const files = window.currentEvidenceFiles;
+
+            if (!files || files.length === 0) {
+                alert('Files not found. Please try uploading again.');
                 return;
             }
 
@@ -283,7 +359,11 @@
             const modal = bootstrap.Modal.getInstance(document.getElementById('descriptionModal'));
             modal.hide();
 
-            await uploadEvidence(obsIdx, taskIdx, file, description);
+            if (isMultiple) {
+                await uploadMultipleEvidence(obsIdx, taskIdx, files, description);
+            } else {
+                await uploadEvidence(obsIdx, taskIdx, files[0], description);
+            }
         }
 
         async function uploadEvidence(obsIdx, taskIdx, file, userDescription = '') {
@@ -499,6 +579,251 @@
                     console.log('Progress monitoring error:', error);
                 }
             }, 2000); // Poll every 2 seconds
+        }
+
+        // Multi-document upload functions
+        function showSingleUpload(obsIdx, taskIdx) {
+            // Update button states
+            document.getElementById(`single-btn-${obsIdx}-${taskIdx}`).classList.add('active');
+            document.getElementById(`multi-btn-${obsIdx}-${taskIdx}`).classList.remove('active');
+
+            // Show/hide upload areas
+            document.getElementById(`single-upload-${obsIdx}-${taskIdx}`).style.display = 'block';
+            document.getElementById(`multi-upload-${obsIdx}-${taskIdx}`).style.display = 'none';
+        }
+
+        function showMultiUpload(obsIdx, taskIdx) {
+            // Update button states
+            document.getElementById(`single-btn-${obsIdx}-${taskIdx}`).classList.remove('active');
+            document.getElementById(`multi-btn-${obsIdx}-${taskIdx}`).classList.add('active');
+
+            // Show/hide upload areas
+            document.getElementById(`single-upload-${obsIdx}-${taskIdx}`).style.display = 'none';
+            document.getElementById(`multi-upload-${obsIdx}-${taskIdx}`).style.display = 'block';
+        }
+
+        async function uploadMultipleEvidence(obsIdx, taskIdx, files, userDescription = '') {
+            if (!files || files.length === 0) return;
+
+            const [observation, tasks] = currentObservations[obsIdx];
+            const task = tasks[taskIdx];
+            const statusElement = document.getElementById(`status-${obsIdx}-${taskIdx}`);
+            const resultContainer = document.getElementById(`validation-result-${obsIdx}-${taskIdx}`);
+
+            // Show uploading status
+            statusElement.className = 'evidence-status evidence-pending';
+            statusElement.innerHTML = `<i class="fas fa-spinner fa-spin me-1"></i>Analyzing ${files.length} Documents...`;
+
+            const formData = new FormData();
+
+            // Add all files
+            for (let file of files) {
+                formData.append('evidence_files', file);
+            }
+
+            formData.append('obs_idx', obsIdx);
+            formData.append('task_idx', taskIdx);
+            formData.append('task_description', task.task_text || '');
+            formData.append('user_description', userDescription);
+            formData.append('task_context', JSON.stringify({
+                department: task.inferred_department,
+                implementation_type: task.implementation_type,
+                division: task.inferred_division,
+                requires_collaboration: task.requires_collaboration
+            }));
+
+            try {
+                // Start progress monitoring
+                const progressInterval = startProgressMonitoring(obsIdx, taskIdx);
+
+                const response = await fetch('/upload_multiple_evidence', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                // Stop progress monitoring
+                clearInterval(progressInterval);
+
+                if (result.error) {
+                    statusElement.className = 'evidence-status evidence-invalid';
+                    statusElement.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i>Validation Error';
+                    resultContainer.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
+                } else {
+                    displayMultiDocumentResult(obsIdx, taskIdx, result);
+                }
+            } catch (error) {
+                statusElement.className = 'evidence-status evidence-invalid';
+                statusElement.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i>Upload Error';
+                resultContainer.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+            }
+        }
+
+        function displayMultiDocumentResult(obsIdx, taskIdx, result) {
+            const statusElement = document.getElementById(`status-${obsIdx}-${taskIdx}`);
+            const resultContainer = document.getElementById(`validation-result-${obsIdx}-${taskIdx}`);
+
+            // Update status
+            if (result.is_valid) {
+                statusElement.className = 'evidence-status evidence-valid';
+                statusElement.innerHTML = `<i class="fas fa-check-circle me-1"></i>Evidence Package Accepted (${result.document_count} docs)`;
+            } else {
+                statusElement.className = 'evidence-status evidence-invalid';
+                statusElement.innerHTML = `<i class="fas fa-times-circle me-1"></i>Evidence Package Rejected (${result.document_count} docs)`;
+            }
+
+            // Create result display
+            let resultHTML = `
+                <div class="validation-result ${result.is_valid ? 'bg-light-success' : 'bg-light-danger'}">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="mb-0">
+                            <i class="fas fa-${result.is_valid ? 'check' : 'times'} me-2"></i>
+                            Multi-Document Analysis Result
+                        </h6>
+                        <div>
+                            <span class="badge ${result.is_valid ? 'bg-success' : 'bg-danger'} me-2">
+                                ${Math.round(result.confidence * 100)}% Confidence
+                            </span>
+                            <span class="badge bg-info">
+                                ${result.document_count} Documents
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <strong>Collective Analysis:</strong>
+                        <p class="mt-1">${result.reasoning}</p>
+                    </div>
+
+                    ${result.document_synergy ? `
+                        <div class="mb-3">
+                            <strong>Document Synergy:</strong>
+                            <p class="mt-1">${result.document_synergy}</p>
+                        </div>
+                    ` : ''}
+
+                    <div class="row">
+                        ${result.strengths && result.strengths.length > 0 ? `
+                            <div class="col-md-6">
+                                <strong class="text-success">Collective Strengths:</strong>
+                                <ul class="mt-1">
+                                    ${result.strengths.map(s => `<li>${s}</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+
+                        ${result.missing_elements && result.missing_elements.length > 0 ? `
+                            <div class="col-md-6">
+                                <strong class="text-danger">Missing Elements:</strong>
+                                <ul class="mt-1">
+                                    ${result.missing_elements.map(m => `<li>${m}</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    ${result.cross_document_findings && result.cross_document_findings.length > 0 ? `
+                        <div class="mt-3">
+                            <strong>Cross-Document Findings:</strong>
+                            <div class="mt-2">
+                                ${result.cross_document_findings.map(finding => `
+                                    <div class="card mb-2">
+                                        <div class="card-body py-2">
+                                            <div class="d-flex justify-content-between">
+                                                <strong>${finding.finding}</strong>
+                                                <span class="badge bg-${finding.significance === 'high' ? 'danger' : finding.significance === 'medium' ? 'warning' : 'info'}">${finding.significance}</span>
+                                            </div>
+                                            <small class="text-muted">Documents: ${finding.documents_involved ? finding.documents_involved.join(', ') : 'N/A'}</small>
+                                            ${finding.explanation ? `<p class="mb-0 mt-1">${finding.explanation}</p>` : ''}
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    <div class="mt-3">
+                        <strong>Recommendation:</strong>
+                        <span class="badge ${getRecommendationBadgeClass(result.recommendation)}">
+                            ${result.recommendation ? result.recommendation.toUpperCase() : 'UNKNOWN'}
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Individual Document Results -->
+                ${result.individual_results && result.individual_results.length > 0 ? `
+                    <div class="mt-4">
+                        <h6><i class="fas fa-list me-2"></i>Individual Document Analysis</h6>
+                        <div class="accordion" id="accordion-${obsIdx}-${taskIdx}">
+                            ${result.individual_results.map((docResult, index) => `
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header">
+                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-${obsIdx}-${taskIdx}-${index}">
+                                            Document ${index + 1}: ${docResult.filename}
+                                            <span class="badge ${docResult.result.is_valid ? 'bg-success' : 'bg-danger'} ms-2">
+                                                ${docResult.result.is_valid ? 'Valid' : 'Invalid'}
+                                            </span>
+                                        </button>
+                                    </h2>
+                                    <div id="collapse-${obsIdx}-${taskIdx}-${index}" class="accordion-collapse collapse" data-bs-parent="#accordion-${obsIdx}-${taskIdx}">
+                                        <div class="accordion-body">
+                                            <strong>Individual Reasoning:</strong>
+                                            <p>${docResult.result.reasoning || 'No detailed reasoning available'}</p>
+
+                                            ${docResult.result.pdf_filename ? `
+                                                <div class="pdf-viewer-container mt-3">
+                                                    <div class="pdf-viewer-header d-flex justify-content-between align-items-center mb-2">
+                                                        <h6 class="mb-0">
+                                                            <i class="fas fa-file-pdf me-2"></i>Document Viewer
+                                                        </h6>
+                                                        <div class="pdf-controls">
+                                                            <button class="btn btn-sm btn-outline-secondary" onclick="previousPage(${obsIdx}, ${taskIdx}, ${index})">
+                                                                <i class="fas fa-chevron-left"></i>
+                                                            </button>
+                                                            <span class="mx-2" id="page-info-${obsIdx}-${taskIdx}-${index}">Page 1 of 1</span>
+                                                            <button class="btn btn-sm btn-outline-secondary" onclick="nextPage(${obsIdx}, ${taskIdx}, ${index})">
+                                                                <i class="fas fa-chevron-right"></i>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                    <div class="pdf-viewer-wrapper" style="position: relative; border: 1px solid #dee2e6; border-radius: 5px;">
+                                                        <canvas id="pdf-canvas-${obsIdx}-${taskIdx}-${index}" style="width: 100%; height: auto;"></canvas>
+                                                        <div id="pdf-annotations-${obsIdx}-${taskIdx}-${index}" class="pdf-annotations-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></div>
+                                                    </div>
+                                                </div>
+                                            ` : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+            `;
+
+            resultContainer.innerHTML = resultHTML;
+
+            // Initialize PDF viewers and annotations for individual documents
+            setTimeout(() => {
+                if (result.individual_results) {
+                    result.individual_results.forEach((docResult, index) => {
+                        if (docResult.result.pdf_filename) {
+                            initializePDFViewer(obsIdx, taskIdx, docResult.result.pdf_filename, index);
+                        }
+                        if (docResult.result.annotations && docResult.result.annotations.length > 0) {
+                            initializeAnnotations(docResult.result.annotations, obsIdx, taskIdx, index);
+                        }
+                    });
+                }
+            }, 100);
+        }
+
+        function addMoreEvidence(obsIdx, taskIdx) {
+            // Show multi-upload option
+            showMultiUpload(obsIdx, taskIdx);
+            // Trigger file input
+            document.getElementById(`evidence-multi-${obsIdx}-${taskIdx}`).click();
         }
     </script>
 

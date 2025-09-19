@@ -776,7 +776,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Function to initialize annotations (called from HTML template)
-function initializeAnnotations(annotationsData, obsIdx = null, taskIdx = null) {
+function initializeAnnotations(annotationsData, obsIdx = null, taskIdx = null, docIndex = null) {
     console.log('Initializing annotations with data:', annotationsData);
 
     // Check if we're in PDF mode (obsIdx and taskIdx provided)
@@ -784,10 +784,11 @@ function initializeAnnotations(annotationsData, obsIdx = null, taskIdx = null) {
 
     if (isPDFMode) {
         // PDF mode - use the PDF annotation system
-        console.log('Initializing PDF annotations for', obsIdx, taskIdx);
+        const docInfo = docIndex !== null ? ` document ${docIndex}` : '';
+        console.log('Initializing PDF annotations for', obsIdx, taskIdx, docInfo);
 
         if (window.pdfAnnotationSystem) {
-            window.pdfAnnotationSystem.setAnnotations(obsIdx, taskIdx, annotationsData);
+            window.pdfAnnotationSystem.setAnnotations(obsIdx, taskIdx, annotationsData, docIndex);
         }
 
         // Still create the annotation panel for navigation

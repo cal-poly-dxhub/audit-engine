@@ -6,10 +6,11 @@
  */
 
 class PDFViewer {
-    constructor(containerId, obsIdx, taskIdx) {
+    constructor(containerId, obsIdx, taskIdx, docIndex = null) {
         this.containerId = containerId;
         this.obsIdx = obsIdx;
         this.taskIdx = taskIdx;
+        this.docIndex = docIndex;
         this.pdf = null;
         this.currentPage = 1;
         this.totalPages = 0;
@@ -19,13 +20,19 @@ class PDFViewer {
         this.highlightLayer = null;
         this.pdfTextData = null; // PyMuPDF text data with precise bounding boxes
 
-        // Get DOM elements
-        this.canvas = document.getElementById(`pdf-canvas-${obsIdx}-${taskIdx}`);
-        this.pageInfo = document.getElementById(`page-info-${obsIdx}-${taskIdx}`);
+        // Create element IDs based on whether this is a multi-document viewer
+        const canvasId = docIndex !== null ? `pdf-canvas-${obsIdx}-${taskIdx}-${docIndex}` : `pdf-canvas-${obsIdx}-${taskIdx}`;
+        const pageInfoId = docIndex !== null ? `page-info-${obsIdx}-${taskIdx}-${docIndex}` : `page-info-${obsIdx}-${taskIdx}`;
+
+        // Get DOM elements with the correct IDs
+        this.canvas = document.getElementById(canvasId);
+        this.pageInfo = document.getElementById(pageInfoId);
 
         if (this.canvas) {
             this.context = this.canvas.getContext('2d');
             this.setupHighlightLayer();
+        } else {
+            console.error('Canvas not found with ID:', canvasId);
         }
     }
 
@@ -411,17 +418,17 @@ window.pdfViewers = new Map();
 window.pdfAnnotationSystem = {
     annotations: new Map(),
 
-    setAnnotations(obsIdx, taskIdx, annotations) {
-        const key = `${obsIdx}-${taskIdx}`;
+    setAnnotations(obsIdx, taskIdx, annotations, docIndex = null) {
+        const key = docIndex !== null ? `${obsIdx}-${taskIdx}-${docIndex}` : `${obsIdx}-${taskIdx}`;
         this.annotations.set(key, annotations || []);
         console.log('Set annotations for', key, ':', annotations?.length || 0);
 
         // Update annotations for current page
-        this.updateAnnotationsForPage(obsIdx, taskIdx, 1);
+        this.updateAnnotationsForPage(obsIdx, taskIdx, 1, docIndex);
     },
 
-    updateAnnotationsForPage(obsIdx, taskIdx, pageNumber) {
-        const key = `${obsIdx}-${taskIdx}`;
+    updateAnnotationsForPage(obsIdx, taskIdx, pageNumber, docIndex = null) {
+        const key = docIndex !== null ? `${obsIdx}-${taskIdx}-${docIndex}` : `${obsIdx}-${taskIdx}`;
         const annotations = this.annotations.get(key) || [];
         const viewer = window.pdfViewers.get(key);
 
@@ -457,16 +464,16 @@ window.pdfAnnotationSystem = {
 };
 
 // Global functions for page navigation (called from HTML buttons)
-function previousPage(obsIdx, taskIdx) {
-    const key = `${obsIdx}-${taskIdx}`;
+function previousPage(obsIdx, taskIdx, docIndex = null) {
+    const key = docIndex !== null ? `${obsIdx}-${taskIdx}-${docIndex}` : `${obsIdx}-${taskIdx}`;
     const viewer = window.pdfViewers.get(key);
     if (viewer) {
         viewer.previousPage();
     }
 }
 
-function nextPage(obsIdx, taskIdx) {
-    const key = `${obsIdx}-${taskIdx}`;
+function nextPage(obsIdx, taskIdx, docIndex = null) {
+    const key = docIndex !== null ? `${obsIdx}-${taskIdx}-${docIndex}` : `${obsIdx}-${taskIdx}`;
     const viewer = window.pdfViewers.get(key);
     if (viewer) {
         viewer.nextPage();
@@ -474,12 +481,19 @@ function nextPage(obsIdx, taskIdx) {
 }
 
 // Global function to initialize PDF viewer (called from HTML)
-function initializePDFViewer(obsIdx, taskIdx, pdfFilename) {
-    console.log('Initializing PDF viewer for', obsIdx, taskIdx, 'with file:', pdfFilename);
+function initializePDFViewer(obsIdx, taskIdx, pdfFilename, docIndex = null) {
+    console.log('Initializing PDF viewer for', obsIdx, taskIdx, 'with file:', pdfFilename, docIndex !== null ? `(document ${docIndex})` : '');
 
-    const key = `${obsIdx}-${taskIdx}`;
-    const viewer = new PDFViewer(`pdf-viewer-${obsIdx}-${taskIdx}`, obsIdx, taskIdx);
+    // Create unique keys for single vs multi-document scenarios
+    const key = docIndex !== null ? `${obsIdx}-${taskIdx}-${docIndex}` : `${obsIdx}-${taskIdx}`;
+    const canvasId = docIndex !== null ? `pdf-canvas-${obsIdx}-${taskIdx}-${docIndex}` : `pdf-canvas-${obsIdx}-${taskIdx}`;
+    const viewerId = docIndex !== null ? `pdf-viewer-${obsIdx}-${taskIdx}-${docIndex}` : `pdf-viewer-${obsIdx}-${taskIdx}`;
+
+    const viewer = new PDFViewer(viewerId, obsIdx, taskIdx, docIndex);
     window.pdfViewers.set(key, viewer);
+
+    // Update the viewer to use the correct canvas ID
+    viewer.canvasId = canvasId;
 
     // Load the PDF
     const pdfUrl = `/get_pdf/${pdfFilename}`;
