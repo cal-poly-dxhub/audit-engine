@@ -36,6 +36,12 @@ from citation_system import (
     CitationMatcher, create_support_annotation, create_concern_annotation, create_correction_annotation
 )
 
+# Import comprehensive logging
+from agent_logger import (
+    start_agent_session, log_tool_start, log_tool_complete, log_tool_error,
+    log_agent_response, end_agent_session
+)
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -118,6 +124,16 @@ Be thorough, objective, and provide detailed reasoning for all assessments."""
         logger.info(f"[START] Starting Claude Code agent analysis: {self.current_analysis_id}")
         logger.info(f"[DOCUMENT] Analyzing '{filename}' for task: {task_description[:50]}...")
 
+        # Start comprehensive logging session
+        session_id = start_agent_session(
+            analysis_id=self.current_analysis_id,
+            agent_type="claude_code_sdk",
+            task_description=task_description,
+            task_context=task_context,
+            user_description=user_description,
+            filename=filename
+        )
+
         try:
             # Create temporary file for the evidence
             temp_file_path = await self._create_temp_evidence_file(file_content, filename)
@@ -151,8 +167,12 @@ Be thorough, objective, and provide detailed reasoning for all assessments."""
                                 # Log agent's thinking and responses
                                 if block.text.strip():
                                     logger.info(f"[AGENT_RESPONSE] {block.text[:200]}{'...' if len(block.text) > 200 else ''}")
+                                    log_agent_response(block.text)  # Comprehensive logging
                                 full_response += block.text
                             elif isinstance(block, ToolUseBlock):
+                                # Start comprehensive tool logging
+                                tool_id = log_tool_start(block.name, block.input)
+
                                 # Log detailed tool usage
                                 logger.info(f"[TOOL_USE] Agent using tool: {block.name}")
 
@@ -181,15 +201,28 @@ Be thorough, objective, and provide detailed reasoning for all assessments."""
 
                                 tool_results.append({
                                     "tool": block.name,
-                                    "input": block.input
+                                    "input": block.input,
+                                    "tool_id": tool_id  # Track for completion logging
                                 })
                             elif isinstance(block, ToolResultBlock):
-                                # Log tool results
-                                result_preview = str(block.content)[:300] if block.content else "No content"
-                                logger.info(f"[TOOL_RESULT] Tool output: {result_preview}{'...' if len(str(block.content)) > 300 else ''}")
+                                # Find the corresponding tool result for logging
+                                matching_tool = None
+                                for tool_result in reversed(tool_results):
+                                    if tool_result.get("tool_id"):
+                                        matching_tool = tool_result
+                                        break
 
+                                # Log tool completion or error
                                 if block.is_error:
-                                    logger.error(f"[TOOL_ERROR] Tool execution failed: {block.content}")
+                                    error_message = str(block.content)
+                                    logger.error(f"[TOOL_ERROR] Tool execution failed: {error_message}")
+                                    if matching_tool:
+                                        log_tool_error(matching_tool["tool_id"], error_message)
+                                else:
+                                    result_preview = str(block.content)[:300] if block.content else "No content"
+                                    logger.info(f"[TOOL_RESULT] Tool output: {result_preview}{'...' if len(str(block.content)) > 300 else ''}")
+                                    if matching_tool:
+                                        log_tool_complete(matching_tool["tool_id"], str(block.content))
                     elif isinstance(message, ResultMessage):
                         logger.info(f"[RESULT] Analysis completed - Duration: {message.duration_ms}ms")
                         if message.is_error:
@@ -209,12 +242,21 @@ Be thorough, objective, and provide detailed reasoning for all assessments."""
                 analysis_result['processing_time'] = time.time() - analysis_start_time
 
                 logger.info(f"[SUCCESS] Claude Code agent analysis completed in {analysis_result['processing_time']:.2f}s")
+
+                # End logging session with success
+                end_agent_session(final_result=analysis_result)
+
                 return analysis_result
 
         except Exception as e:
+            error_message = f"Agent analysis failed: {str(e)}"
             logger.error(f"[ERROR] Claude Code agent analysis failed: {str(e)}")
+
+            # End logging session with error
+            end_agent_session(error_message=error_message)
+
             return {
-                "error": f"Agent analysis failed: {str(e)}",
+                "error": error_message,
                 "analysis_id": self.current_analysis_id,
                 "processing_time": time.time() - analysis_start_time
             }

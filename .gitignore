@@ -226,6 +226,11 @@ logs/
 claude_code_test.py
 new_claude_code_test.py
 
+# Agent activity logs and database
+logs/agent_activity_*.log
+logs/agent_logs.db
+logs/session_*.json
+
 # Citation system test files and temporary data
 test_citation_system.py
 test_claude_code_citations.py
