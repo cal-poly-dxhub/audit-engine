@@ -233,3 +233,4 @@ sample_annotations.json
 
 # Temporary evidence analysis files
 /tmp/claude_code_evidence/
+temp_pdfs/

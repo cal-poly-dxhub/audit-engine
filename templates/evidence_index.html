@@ -50,6 +50,9 @@
 
     <!-- Annotation System Styles -->
     <link href="/static/annotation_system.css" rel="stylesheet">
+
+    <!-- PDF.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
     <div class="container-fluid">
@@ -395,6 +398,28 @@
                         </span>
                     </div>
                 </div>
+
+                <!-- PDF Viewer Container -->
+                <div class="pdf-viewer-container mt-4" id="pdf-viewer-${obsIdx}-${taskIdx}">
+                    <div class="pdf-viewer-header d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0">
+                            <i class="fas fa-file-pdf me-2"></i>Document Viewer
+                        </h6>
+                        <div class="pdf-controls">
+                            <button class="btn btn-sm btn-outline-secondary" onclick="previousPage(${obsIdx}, ${taskIdx})">
+                                <i class="fas fa-chevron-left"></i>
+                            </button>
+                            <span class="mx-2" id="page-info-${obsIdx}-${taskIdx}">Page 1 of 1</span>
+                            <button class="btn btn-sm btn-outline-secondary" onclick="nextPage(${obsIdx}, ${taskIdx})">
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="pdf-viewer-wrapper" style="position: relative; border: 1px solid #dee2e6; border-radius: 5px;">
+                        <canvas id="pdf-canvas-${obsIdx}-${taskIdx}" style="width: 100%; height: auto;"></canvas>
+                        <div id="pdf-annotations-${obsIdx}-${taskIdx}" class="pdf-annotations-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></div>
+                    </div>
+                </div>
             `;
             
             // Add annotated image if available
@@ -412,15 +437,19 @@
             
             resultContainer.innerHTML = resultHTML;
 
-            // Initialize annotations if they exist
-            if (result.annotations && result.annotations.length > 0) {
-                console.log('Initializing annotations for result:', result.annotations);
+            // Initialize PDF viewer and annotations
+            setTimeout(() => {
+                // Initialize PDF viewer if we have a PDF file
+                if (result.pdf_filename) {
+                    initializePDFViewer(obsIdx, taskIdx, result.pdf_filename);
+                }
 
-                // Wait for DOM to be updated, then initialize annotations
-                setTimeout(() => {
-                    initializeAnnotations(result.annotations);
-                }, 100);
-            }
+                // Initialize annotations if they exist
+                if (result.annotations && result.annotations.length > 0) {
+                    console.log('Initializing annotations for result:', result.annotations);
+                    initializeAnnotations(result.annotations, obsIdx, taskIdx);
+                }
+            }, 100);
         }
 
         function getRecommendationBadgeClass(recommendation) {
@@ -472,6 +501,9 @@
             }, 2000); // Poll every 2 seconds
         }
     </script>
+
+    <!-- PDF Viewer JavaScript -->
+    <script src="/static/pdf_viewer.js"></script>
 
     <!-- Annotation System JavaScript -->
     <script src="/static/annotation_system.js"></script>

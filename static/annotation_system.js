@@ -776,27 +776,58 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Function to initialize annotations (called from HTML template)
-function initializeAnnotations(annotationsData) {
+function initializeAnnotations(annotationsData, obsIdx = null, taskIdx = null) {
     console.log('Initializing annotations with data:', annotationsData);
 
-    if (!annotationSystem) {
-        annotationSystem = new AnnotationSystem();
+    // Check if we're in PDF mode (obsIdx and taskIdx provided)
+    const isPDFMode = obsIdx !== null && taskIdx !== null;
+
+    if (isPDFMode) {
+        // PDF mode - use the PDF annotation system
+        console.log('Initializing PDF annotations for', obsIdx, taskIdx);
+
+        if (window.pdfAnnotationSystem) {
+            window.pdfAnnotationSystem.setAnnotations(obsIdx, taskIdx, annotationsData);
+        }
+
+        // Still create the annotation panel for navigation
+        if (!annotationSystem) {
+            annotationSystem = new AnnotationSystem();
+        }
+        annotationSystem.annotations = annotationsData || [];
+        annotationSystem.createAnnotationPanel();
+        annotationSystem.createAnnotationControls();
+
+    } else {
+        // Text mode - use the traditional annotation system
+        console.log('Initializing text-based annotations');
+
+        if (!annotationSystem) {
+            annotationSystem = new AnnotationSystem();
+        }
+
+        annotationSystem.initialize(annotationsData);
     }
 
-    annotationSystem.initialize(annotationsData);
-
-    // Add keyboard shortcut to toggle panel
+    // Add keyboard shortcut to toggle panel (works for both modes)
     document.addEventListener('keydown', function(e) {
         if (e.key === 'a' && e.ctrlKey) {
             e.preventDefault();
-            annotationSystem.toggleAnnotationPanel();
+            if (annotationSystem) {
+                annotationSystem.toggleAnnotationPanel();
+            }
         }
     });
 
-    // Hide popups when clicking outside
+    // Hide popups when clicking outside (works for both modes)
     document.addEventListener('click', function(e) {
-        if (!e.target.closest('.annotation-popup') && !e.target.closest('.annotation-highlight')) {
-            annotationSystem.hideAllPopups();
+        if (!e.target.closest('.annotation-popup') && !e.target.closest('.annotation-highlight') &&
+            !e.target.closest('.pdf-annotation-popup') && !e.target.closest('.pdf-annotation-marker')) {
+            if (annotationSystem) {
+                annotationSystem.hideAllPopups();
+            }
+            // Also hide PDF popups
+            document.querySelectorAll('.pdf-annotation-popup').forEach(popup => popup.remove());
         }
     });
 }

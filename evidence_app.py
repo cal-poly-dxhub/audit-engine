@@ -21,6 +21,7 @@ import base64
 from PIL import Image, ImageDraw, ImageFont
 import colorsys
 import random
+import fitz  # PyMuPDF
 
 # Load environment variables
 load_dotenv()
@@ -282,6 +283,26 @@ Coordinates should be normalized (0-1). Be precise with bounding boxes.
             if use_agentic:
                 logger.info(f"Starting Claude Code SDK agent analysis for {filename}")
 
+                # Store PDF file temporarily for viewer access
+                pdf_filename = None
+                if filename.lower().endswith('.pdf'):
+                    import tempfile
+                    import os
+
+                    # Create temp directory if it doesn't exist
+                    temp_dir = os.path.join(os.getcwd(), 'temp_pdfs')
+                    os.makedirs(temp_dir, exist_ok=True)
+
+                    # Generate unique filename
+                    import uuid
+                    unique_id = str(uuid.uuid4())[:8]
+                    pdf_filename = f"{unique_id}_{filename}"
+                    pdf_path = os.path.join(temp_dir, pdf_filename)
+
+                    # Save the PDF file
+                    with open(pdf_path, 'wb') as f:
+                        f.write(file_content)
+
                 # Use the Claude Code SDK agent for comprehensive analysis
                 result = self.claude_code_agent.analyze_evidence_sync(
                     file_content,
@@ -294,6 +315,10 @@ Coordinates should be normalized (0-1). Be precise with bounding boxes.
                 # Add metadata about the analysis method
                 result['analysis_method'] = 'claude_code_sdk_agent'
                 result['agent_version'] = '2.0'
+
+                # Add PDF file path for viewer
+                if pdf_filename:
+                    result['pdf_filename'] = pdf_filename
 
                 # If agentic analysis was successful, enhance with bounding boxes for images
                 if result.get('is_valid') and not result.get('error'):
@@ -563,6 +588,94 @@ def get_annotated_image(filename):
         else:
             return jsonify({'error': 'Image not found'}), 404
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/get_pdf/<filename>')
+def get_pdf(filename):
+    """Serve PDF files for the PDF viewer"""
+    try:
+        pdf_dir = os.path.join(os.getcwd(), 'temp_pdfs')
+        file_path = os.path.join(pdf_dir, filename)
+
+        if os.path.exists(file_path):
+            return send_file(file_path, mimetype='application/pdf')
+        else:
+            return jsonify({'error': 'PDF not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/get_pdf_text_data/<filename>')
+def get_pdf_text_data(filename):
+    """Extract precise text positioning data from PDF using PyMuPDF"""
+    try:
+        pdf_dir = os.path.join(os.getcwd(), 'temp_pdfs')
+        file_path = os.path.join(pdf_dir, filename)
+
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'PDF not found'}), 404
+
+        # Open PDF with PyMuPDF
+        doc = fitz.open(file_path)
+        pages_data = []
+
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+
+            # Get page dimensions
+            rect = page.rect
+            page_width = rect.width
+            page_height = rect.height
+
+            # Extract text blocks with precise positioning
+            blocks = page.get_text("dict")
+
+            text_items = []
+            full_text_parts = []
+
+            for block in blocks["blocks"]:
+                if "lines" in block:  # Text block
+                    for line in block["lines"]:
+                        for span in line["spans"]:
+                            # Get bounding box
+                            bbox = span["bbox"]  # [x0, y0, x1, y1]
+
+                            text_item = {
+                                "text": span["text"],
+                                "bbox": {
+                                    "x0": bbox[0],
+                                    "y0": bbox[1],
+                                    "x1": bbox[2],
+                                    "y1": bbox[3]
+                                },
+                                "font": span.get("font", ""),
+                                "size": span.get("size", 12),
+                                "flags": span.get("flags", 0)
+                            }
+
+                            text_items.append(text_item)
+                            full_text_parts.append(span["text"])
+
+            # Combine into page data
+            page_data = {
+                "page_number": page_num + 1,
+                "width": page_width,
+                "height": page_height,
+                "text_items": text_items,
+                "full_text": " ".join(full_text_parts)
+            }
+
+            pages_data.append(page_data)
+
+        doc.close()
+
+        return jsonify({
+            "success": True,
+            "filename": filename,
+            "pages": pages_data
+        })
+
+    except Exception as e:
+        logger.error(f"Error extracting PDF text data: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/progress')

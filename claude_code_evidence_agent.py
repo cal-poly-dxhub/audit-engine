@@ -261,18 +261,19 @@ USER EXPLANATION: {user_description if user_description else 'No explanation pro
 
 ANALYSIS INSTRUCTIONS:
 
-1. **INSTALL REQUIRED LIBRARIES**: If needed, use Bash to install PDF processing libraries like pdfplumber, pymupdf, or other tools
-2. **WRITE EXTRACTION SCRIPTS**: Create Python scripts to properly extract text from the PDF using advanced libraries
-3. **EXECUTE CODE**: Run the extraction scripts to get readable content from the document
-4. **READ THE EVIDENCE FILE**: Use multiple approaches (Read tool + custom scripts) to examine the document thoroughly
-5. **DOCUMENT ANALYSIS**: Break down the document structure and key content areas
-6. **REQUIREMENTS MAPPING**: Compare evidence against the specific audit task requirements
-7. **QUALITY ASSESSMENT**: Evaluate completeness, relevance, and strength of evidence
-8. **CITATION GENERATION**: Identify specific text passages to highlight with annotations
-9. **DETAILED FINDINGS**: Identify specific supporting elements and gaps
-10. **COMPREHENSIVE REPORT**: Generate final assessment with confidence scores and citations
+1. **EXTRACT PDF TEXT**: Use the mcp__pdf-tools__extract_pdf_text tool to extract text from the PDF
+2. **DOCUMENT ANALYSIS**: Break down the document structure and key content areas
+3. **REQUIREMENTS MAPPING**: Compare evidence against the specific audit task requirements
+4. **QUALITY ASSESSMENT**: Evaluate completeness, relevance, and strength of evidence
+5. **CITATION GENERATION**: Identify specific text passages to highlight with annotations
+6. **DETAILED FINDINGS**: Identify specific supporting elements and gaps
+7. **COMPREHENSIVE REPORT**: Generate final assessment with confidence scores and citations
 
-IMPORTANT: If the basic Read tool doesn't extract text properly from the PDF, write and execute Python code using advanced PDF libraries to extract the content. You have full code execution capabilities - use them!
+IMPORTANT:
+- DO NOT write or execute Python code - use the provided MCP PDF extraction tool instead
+- DO NOT install libraries or create scripts
+- Focus on analysis, not technical implementation
+- Use the mcp__pdf-tools__extract_pdf_text tool for all PDF text extraction needs
 
 CITATION REQUIREMENTS:
 - For each key finding (positive or negative), identify the specific text passage that led to your conclusion
