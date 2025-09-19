@@ -144,6 +144,11 @@ class PDFViewer {
                 window.pdfAnnotationSystem.updateAnnotationsForPage(this.obsIdx, this.taskIdx, pageNumber, this.docIndex);
             }
 
+            // Set up a small delay to reposition highlights after rendering
+            setTimeout(() => {
+                this.repositionHighlights();
+            }, 100);
+
         } catch (error) {
             console.error('Error rendering page:', error);
             this.showError('Failed to render page: ' + error.message);
@@ -254,19 +259,23 @@ class PDFViewer {
         // Calculate scale factor between PyMuPDF coordinates and canvas
         const pageData = this.pdfTextData[this.currentPage - 1];
 
-        // Check if canvas is visible and sized
-        let scaleX = this.canvas.offsetWidth / pageData.width;
-        let scaleY = this.canvas.offsetHeight / pageData.height;
+        // Get scale from canvas dimensions or parent container
+        let scaleX, scaleY;
 
-        // Fallback if canvas isn't properly sized (e.g., in collapsed accordion)
-        if (scaleX === 0 || scaleY === 0) {
-            // Use canvas client dimensions or fallback to natural dimensions
-            const canvasWidth = this.canvas.clientWidth || this.canvas.width || 800;
-            const canvasHeight = this.canvas.clientHeight || this.canvas.height || 600;
-            scaleX = canvasWidth / pageData.width;
-            scaleY = canvasHeight / pageData.height;
+        // First try to use the visible canvas dimensions
+        if (this.canvas.offsetWidth > 0 && this.canvas.offsetHeight > 0) {
+            scaleX = this.canvas.offsetWidth / pageData.width;
+            scaleY = this.canvas.offsetHeight / pageData.height;
+        } else {
+            // Canvas is not visible (e.g., in collapsed accordion)
+            // Use the container width or a reasonable default
+            const containerWidth = this.canvas.parentElement?.offsetWidth || 800;
 
-            console.log('Canvas not visible, using fallback scale:', { scaleX, scaleY, canvasWidth, canvasHeight });
+            // Calculate based on aspect ratio - assume canvas width matches container
+            scaleX = containerWidth / pageData.width;
+            scaleY = scaleX; // Maintain aspect ratio
+
+            console.log('Canvas hidden, using container-based scale:', { scaleX, scaleY, containerWidth, pageWidth: pageData.width, pageHeight: pageData.height });
         }
 
         // Convert PyMuPDF coordinates to canvas coordinates
@@ -274,6 +283,14 @@ class PDFViewer {
         const y = bbox.y0 * scaleY;
         const width = (bbox.x1 - bbox.x0) * scaleX;
         const height = (bbox.y1 - bbox.y0) * scaleY;
+
+        // Store scale factors for later repositioning
+        const highlightData = {
+            originalBbox: bbox,
+            scaleX: scaleX,
+            scaleY: scaleY,
+            pageData: pageData
+        };
 
         const highlight = document.createElement('div');
         highlight.className = `pdf-text-highlight annotation-type-${annotationType}`;
@@ -319,6 +336,10 @@ class PDFViewer {
             highlight.style.backgroundColor = `${color}40`;
         });
 
+        // Store highlight data for repositioning
+        highlight.dataset.highlightData = JSON.stringify(highlightData);
+        highlight.dataset.annotationId = annotation.annotation_id;
+
         this.highlightLayer.appendChild(highlight);
 
         console.log('Created highlight:', {
@@ -326,7 +347,9 @@ class PDFViewer {
             y: y,
             width: width,
             height: height,
-            text: highlightInfo.text
+            text: highlightInfo.text,
+            scaleX: scaleX,
+            scaleY: scaleY
         });
     }
 
@@ -434,6 +457,66 @@ class PDFViewer {
         if (this.highlightLayer) {
             this.highlightLayer.innerHTML = '';
         }
+    }
+
+    /**
+     * Reposition all highlights when canvas becomes visible or changes size
+     */
+    repositionHighlights() {
+        if (!this.highlightLayer || !this.pdfTextData) {
+            return;
+        }
+
+        const pageData = this.pdfTextData[this.currentPage - 1];
+        if (!pageData) {
+            return;
+        }
+
+        // Calculate new scale factors
+        let newScaleX, newScaleY;
+
+        if (this.canvas.offsetWidth > 0 && this.canvas.offsetHeight > 0) {
+            newScaleX = this.canvas.offsetWidth / pageData.width;
+            newScaleY = this.canvas.offsetHeight / pageData.height;
+        } else {
+            const containerWidth = this.canvas.parentElement?.offsetWidth || 800;
+            newScaleX = containerWidth / pageData.width;
+            newScaleY = newScaleX;
+        }
+
+        // Update all existing highlights
+        const highlights = this.highlightLayer.querySelectorAll('.pdf-text-highlight');
+        highlights.forEach(highlight => {
+            const storedData = highlight.dataset.highlightData;
+            if (storedData) {
+                try {
+                    const data = JSON.parse(storedData);
+                    const bbox = data.originalBbox;
+
+                    // Recalculate position with new scale
+                    const x = bbox.x0 * newScaleX;
+                    const y = bbox.y0 * newScaleY;
+                    const width = (bbox.x1 - bbox.x0) * newScaleX;
+                    const height = (bbox.y1 - bbox.y0) * newScaleY;
+
+                    // Update highlight position
+                    highlight.style.left = `${x}px`;
+                    highlight.style.top = `${y}px`;
+                    highlight.style.width = `${width}px`;
+                    highlight.style.height = `${height}px`;
+
+                    // Update stored data
+                    data.scaleX = newScaleX;
+                    data.scaleY = newScaleY;
+                    highlight.dataset.highlightData = JSON.stringify(data);
+
+                } catch (e) {
+                    console.error('Error repositioning highlight:', e);
+                }
+            }
+        });
+
+        console.log('Repositioned', highlights.length, 'highlights with scale:', { newScaleX, newScaleY });
     }
 
     showError(message) {
@@ -551,6 +634,10 @@ function initializePDFViewer(obsIdx, taskIdx, pdfFilename, docIndex = null) {
     viewer.loadPDF(pdfUrl).then(success => {
         if (success) {
             console.log('PDF viewer initialized successfully');
+            // Reposition highlights after PDF is fully loaded
+            setTimeout(() => {
+                viewer.repositionHighlights();
+            }, 500);
         } else {
             console.error('Failed to initialize PDF viewer');
         }

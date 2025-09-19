@@ -529,6 +529,26 @@
                     console.log('Initializing annotations for result:', result.annotations);
                     initializeAnnotations(result.annotations, obsIdx, taskIdx);
                 }
+
+                // Add observer for PDF container visibility changes
+                const pdfContainer = document.getElementById(`pdf-viewer-${obsIdx}-${taskIdx}`);
+                if (pdfContainer) {
+                    const observer = new MutationObserver(() => {
+                        const key = `${obsIdx}-${taskIdx}`;
+                        const viewer = window.pdfViewers?.get(key);
+                        if (viewer && pdfContainer.offsetWidth > 0) {
+                            setTimeout(() => {
+                                viewer.repositionHighlights();
+                            }, 100);
+                        }
+                    });
+                    observer.observe(pdfContainer, {
+                        attributes: true,
+                        attributeFilter: ['style', 'class'],
+                        childList: true,
+                        subtree: true
+                    });
+                }
             }, 100);
         }
 
@@ -815,6 +835,25 @@
                             initializeAnnotations(docResult.result.annotations, obsIdx, taskIdx, index);
                         }
                     });
+
+                    // Add accordion event listeners to reposition highlights when panels are shown
+                    const accordion = document.getElementById(`accordion-${obsIdx}-${taskIdx}`);
+                    if (accordion) {
+                        const collapseElements = accordion.querySelectorAll('.accordion-collapse');
+                        collapseElements.forEach((collapse, index) => {
+                            collapse.addEventListener('shown.bs.collapse', () => {
+                                console.log('Accordion panel shown for document', index);
+                                const key = `${obsIdx}-${taskIdx}-${index}`;
+                                const viewer = window.pdfViewers?.get(key);
+                                if (viewer) {
+                                    // Small delay to ensure element is fully rendered
+                                    setTimeout(() => {
+                                        viewer.repositionHighlights();
+                                    }, 200);
+                                }
+                            });
+                        });
+                    }
                 }
             }, 100);
         }
