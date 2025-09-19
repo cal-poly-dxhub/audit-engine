@@ -30,6 +30,12 @@ from claude_code_sdk import (
 # Import PDF tools
 from pdf_tools import create_pdf_tools_server
 
+# Import citation system
+from citation_system import (
+    Citation, Annotation, AnnotationSet, AnnotationType, AnnotationSeverity,
+    CitationMatcher, create_support_annotation, create_concern_annotation, create_correction_annotation
+)
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -262,10 +268,25 @@ ANALYSIS INSTRUCTIONS:
 5. **DOCUMENT ANALYSIS**: Break down the document structure and key content areas
 6. **REQUIREMENTS MAPPING**: Compare evidence against the specific audit task requirements
 7. **QUALITY ASSESSMENT**: Evaluate completeness, relevance, and strength of evidence
-8. **DETAILED FINDINGS**: Identify specific supporting elements and gaps
-9. **COMPREHENSIVE REPORT**: Generate final assessment with confidence scores
+8. **CITATION GENERATION**: Identify specific text passages to highlight with annotations
+9. **DETAILED FINDINGS**: Identify specific supporting elements and gaps
+10. **COMPREHENSIVE REPORT**: Generate final assessment with confidence scores and citations
 
 IMPORTANT: If the basic Read tool doesn't extract text properly from the PDF, write and execute Python code using advanced PDF libraries to extract the content. You have full code execution capabilities - use them!
+
+CITATION REQUIREMENTS:
+- For each key finding (positive or negative), identify the specific text passage that led to your conclusion
+- Include exact quotes from the document as "text_snippet"
+- Use appropriate annotation types:
+  * "support" - text that supports compliance or positive findings
+  * "concern" - text that raises concerns or shows potential issues
+  * "correction" - text that contains errors or needs changes
+  * "missing" - points where required information is absent
+  * "clarification" - text that needs further explanation
+  * "reference" - general citations for context
+- Choose severity levels: info (general), low, medium, high, critical
+- Provide helpful titles and detailed explanations for each annotation
+- Include suggested actions for concerns/corrections when possible
 
 Please provide your analysis in this JSON format at the end:
 
@@ -279,6 +300,17 @@ Please provide your analysis in this JSON format at the end:
     "missing_elements": ["specific requirements not addressed"],
     "recommendations": ["actionable recommendations"],
     "recommendation": "accept/reject/request_additional",
+    "annotations": [
+        {{
+            "text_snippet": "exact text from document to highlight",
+            "annotation_type": "support|concern|correction|clarification|reference|missing",
+            "severity": "info|low|medium|high|critical",
+            "title": "brief title for annotation",
+            "message": "detailed explanation or comment",
+            "suggested_action": "what should be done (optional)",
+            "suggested_replacement": "replacement text if correction needed (optional)"
+        }}
+    ],
     "detailed_findings": {{
         "document_structure": "description of document organization",
         "key_sections": ["list of important sections identified"],
@@ -298,6 +330,62 @@ Please provide your analysis in this JSON format at the end:
 Start by reading and analyzing the evidence document systematically.
 """
 
+    def _process_annotations(self, annotations_data: List[Dict[str, Any]], document_text: str = "") -> List[Dict[str, Any]]:
+        """Process annotation data from AI response into properly formatted annotations"""
+        processed_annotations = []
+
+        if not annotations_data:
+            return processed_annotations
+
+        for annotation_data in annotations_data:
+            try:
+                # Extract annotation information
+                text_snippet = annotation_data.get('text_snippet', '')
+                annotation_type_str = annotation_data.get('annotation_type', 'reference')
+                severity_str = annotation_data.get('severity', 'info')
+                title = annotation_data.get('title', 'Citation')
+                message = annotation_data.get('message', '')
+                suggested_action = annotation_data.get('suggested_action')
+                suggested_replacement = annotation_data.get('suggested_replacement')
+
+                # Validate annotation type and severity
+                valid_types = ['support', 'concern', 'correction', 'clarification', 'reference', 'missing']
+                valid_severities = ['info', 'low', 'medium', 'high', 'critical']
+
+                if annotation_type_str not in valid_types:
+                    annotation_type_str = 'reference'
+
+                if severity_str not in valid_severities:
+                    severity_str = 'info'
+
+                # Create annotation object using the citation system
+                citation = Citation(text_snippet=text_snippet, confidence_score=1.0)
+
+                # If we have document text, try to find the position
+                if document_text and text_snippet:
+                    located_citation = CitationMatcher.find_text_position(document_text, text_snippet)
+                    if located_citation:
+                        citation = located_citation
+
+                annotation = Annotation(
+                    citation=citation,
+                    annotation_type=AnnotationType(annotation_type_str),
+                    severity=AnnotationSeverity(severity_str),
+                    title=title,
+                    message=message,
+                    suggested_action=suggested_action,
+                    suggested_replacement=suggested_replacement
+                )
+
+                processed_annotations.append(annotation.to_dict())
+                logger.debug(f"[CITATION] Processed annotation: {annotation_type_str} - {title}")
+
+            except Exception as e:
+                logger.error(f"Error processing annotation: {str(e)}")
+                continue
+
+        return processed_annotations
+
     async def _parse_agent_response(self,
                                    response_text: str,
                                    tool_results: List[Dict],
@@ -313,6 +401,28 @@ Start by reading and analyzing the evidence document systematically.
                 json_str = json_match.group(1)
                 parsed_result = json.loads(json_str)
                 logger.info("[PARSE] Successfully extracted JSON analysis results")
+
+                # Process annotations if they exist
+                if 'annotations' in parsed_result and parsed_result['annotations']:
+                    # Try to get document text from tool results for better citation matching
+                    document_text = ""
+                    for tool_result in tool_results:
+                        if 'extracted_text' in str(tool_result):
+                            # Try to extract document text from PDF extraction results
+                            try:
+                                tool_content = str(tool_result)
+                                if 'text' in tool_content:
+                                    document_text = tool_content
+                                    break
+                            except:
+                                pass
+
+                    processed_annotations = self._process_annotations(
+                        parsed_result['annotations'],
+                        document_text
+                    )
+                    parsed_result['annotations'] = processed_annotations
+                    logger.info(f"[CITATIONS] Processed {len(processed_annotations)} annotations")
 
                 # Add processing metadata
                 parsed_result['full_response'] = response_text
@@ -333,6 +443,7 @@ Start by reading and analyzing the evidence document systematically.
                     "missing_elements": self._extract_missing_from_text(response_text),
                     "recommendations": self._extract_recommendations_from_text(response_text),
                     "recommendation": self._extract_recommendation_from_text(response_text),
+                    "annotations": [],  # No annotations in fallback case
                     "full_response": response_text,
                     "tool_operations": tool_results,
                     "analysis_method": "claude_code_sdk_agent_fallback"
@@ -343,7 +454,8 @@ Start by reading and analyzing the evidence document systematically.
             return {
                 "error": f"Failed to parse agent response: {str(e)}",
                 "full_response": response_text,
-                "tool_operations": tool_results
+                "tool_operations": tool_results,
+                "annotations": []  # No annotations in error case
             }
 
     def _extract_validity_from_text(self, text: str) -> bool:

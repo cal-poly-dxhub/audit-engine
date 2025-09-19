@@ -47,6 +47,9 @@
             border-radius: 5px;
         }
     </style>
+
+    <!-- Annotation System Styles -->
+    <link href="/static/annotation_system.css" rel="stylesheet">
 </head>
 <body>
     <div class="container-fluid">
@@ -386,9 +389,9 @@
                     </div>
                     
                     <div class="mt-3">
-                        <strong>Recommendation:</strong> 
+                        <strong>Recommendation:</strong>
                         <span class="badge ${getRecommendationBadgeClass(result.recommendation)}">
-                            ${result.recommendation.toUpperCase()}
+                            ${result.recommendation ? result.recommendation.toUpperCase() : 'UNKNOWN'}
                         </span>
                     </div>
                 </div>
@@ -408,6 +411,16 @@
             }
             
             resultContainer.innerHTML = resultHTML;
+
+            // Initialize annotations if they exist
+            if (result.annotations && result.annotations.length > 0) {
+                console.log('Initializing annotations for result:', result.annotations);
+
+                // Wait for DOM to be updated, then initialize annotations
+                setTimeout(() => {
+                    initializeAnnotations(result.annotations);
+                }, 100);
+            }
         }
 
         function getRecommendationBadgeClass(recommendation) {
@@ -459,5 +472,8 @@
             }, 2000); // Poll every 2 seconds
         }
     </script>
+
+    <!-- Annotation System JavaScript -->
+    <script src="/static/annotation_system.js"></script>
 </body>
 </html>

@@ -1,0 +1,278 @@
+/*
+ * Annotation System Styles
+ * Provides styling for interactive text annotations and citations
+ */
+
+/* Annotation Toggle Button */
+.annotation-toggle-btn {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 1001;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 50px;
+    padding: 12px 16px;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,123,255,0.3);
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.annotation-toggle-btn:hover {
+    background: #0056b3;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0,123,255,0.4);
+}
+
+.annotation-toggle-btn .badge {
+    background: rgba(255,255,255,0.3);
+    border-radius: 12px;
+    padding: 2px 6px;
+    font-size: 11px;
+    min-width: 16px;
+    text-align: center;
+}
+
+/* Annotation Summary Bar */
+.annotation-summary {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 12px;
+    margin: 16px 0;
+    display: none;
+}
+
+.annotation-summary.show {
+    display: block;
+}
+
+.annotation-summary-title {
+    font-weight: bold;
+    margin-bottom: 8px;
+    color: #495057;
+}
+
+.annotation-summary-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.annotation-stat {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+}
+
+.annotation-stat-color {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+}
+
+.annotation-stat-label {
+    font-weight: 500;
+}
+
+.annotation-stat-count {
+    color: #6c757d;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .annotation-panel {
+        position: fixed !important;
+        right: 10px !important;
+        left: 10px !important;
+        width: auto !important;
+        top: 50px !important;
+        bottom: 50px !important;
+        max-height: none !important;
+    }
+
+    .annotation-toggle-btn {
+        bottom: 10px;
+        right: 10px;
+        padding: 10px 14px;
+        font-size: 13px;
+    }
+
+    .annotation-popup {
+        max-width: 280px !important;
+        font-size: 13px !important;
+    }
+
+    .annotation-summary-stats {
+        flex-direction: column;
+        gap: 8px;
+    }
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+    .annotation-popup {
+        background: #343a40;
+        border-color: #495057;
+        color: #f8f9fa;
+    }
+
+    .annotation-popup-header {
+        border-bottom-color: #495057;
+    }
+
+    .annotation-panel {
+        background: #343a40;
+        border-color: #495057;
+        color: #f8f9fa;
+    }
+
+    .annotation-panel-header {
+        background: #495057;
+        border-bottom-color: #6c757d;
+    }
+
+    .annotation-panel-item {
+        border-color: #495057;
+        background: #495057;
+    }
+
+    .annotation-panel-item:hover {
+        background: #6c757d;
+    }
+
+    .annotation-panel-item.active {
+        background: #1e3a5f;
+        border-color: #3d6aa8;
+    }
+
+    .annotation-summary {
+        background: #495057;
+        border-color: #6c757d;
+        color: #f8f9fa;
+    }
+
+    .annotation-replacement {
+        background: #495057;
+        border-color: #6c757d;
+        color: #f8f9fa;
+    }
+}
+
+/* Animation Classes */
+.annotation-fade-in {
+    animation: annotationFadeIn 0.3s ease-out;
+}
+
+.annotation-pulse {
+    animation: annotationPulse 2s ease-in-out;
+}
+
+@keyframes annotationFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes annotationPulse {
+    0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(0,123,255,0.4);
+    }
+    50% {
+        transform: scale(1.05);
+        box-shadow: 0 0 0 10px rgba(0,123,255,0);
+    }
+}
+
+/* Print Styles - Hide annotations in print */
+@media print {
+    .annotation-panel,
+    .annotation-popup,
+    .annotation-toggle-btn,
+    .annotation-summary {
+        display: none !important;
+    }
+
+    .annotation-highlight {
+        background: none !important;
+        box-shadow: none !important;
+    }
+}
+
+/* Accessibility Improvements */
+.annotation-highlight:focus {
+    outline: 2px solid #007bff;
+    outline-offset: 2px;
+}
+
+.annotation-popup-close:focus,
+.annotation-toggle-btn:focus {
+    outline: 2px solid #80bdff;
+    outline-offset: 2px;
+}
+
+/* High Contrast Mode */
+@media (prefers-contrast: high) {
+    .annotation-highlight {
+        border: 2px solid currentColor !important;
+    }
+
+    .annotation-popup {
+        border: 2px solid currentColor;
+    }
+
+    .annotation-panel {
+        border: 2px solid currentColor;
+    }
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+    .annotation-highlight,
+    .annotation-popup,
+    .annotation-panel,
+    .annotation-toggle-btn {
+        transition: none !important;
+        animation: none !important;
+    }
+}
+
+/* Tooltips for annotation types */
+.annotation-type-tooltip {
+    position: relative;
+}
+
+.annotation-type-tooltip::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.8);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    z-index: 1002;
+}
+
+.annotation-type-tooltip:hover::after {
+    opacity: 1;
+}

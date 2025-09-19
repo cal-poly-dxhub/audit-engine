@@ -225,3 +225,11 @@ evidence_annotations/
 logs/
 claude_code_test.py
 new_claude_code_test.py
+
+# Citation system test files and temporary data
+test_citation_system.py
+test_claude_code_citations.py
+sample_annotations.json
+
+# Temporary evidence analysis files
+/tmp/claude_code_evidence/
