@@ -42,6 +42,12 @@ from agent_logger import (
     log_agent_response, end_agent_session
 )
 
+# Import simple user-friendly logging
+from simple_agent_logger import (
+    start_simple_analysis, update_simple_step, add_simple_tool_call,
+    add_simple_agent_response, add_simple_milestone, complete_simple_analysis
+)
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -134,6 +140,15 @@ Be thorough, objective, and provide detailed reasoning for all assessments."""
             filename=filename
         )
 
+        # Start simple user-friendly logging
+        start_simple_analysis(
+            task_description=task_description,
+            task_context=task_context,
+            user_description=user_description,
+            filename=filename,
+            agent_type="claude_code_sdk"
+        )
+
         try:
             # Create temporary file for the evidence
             temp_file_path = await self._create_temp_evidence_file(file_content, filename)
@@ -153,6 +168,9 @@ Be thorough, objective, and provide detailed reasoning for all assessments."""
                 logger.info(f"[AGENT_PROMPT] User Description: {user_description}")
                 logger.info(f"[AGENT_PROMPT] Evidence File: {temp_file_path}")
 
+                # Update simple logging
+                update_simple_step("Sending analysis request to AI agent...", 1, 5)
+
                 # Send analysis request to the agent
                 await client.query(analysis_prompt)
 
@@ -168,6 +186,7 @@ Be thorough, objective, and provide detailed reasoning for all assessments."""
                                 if block.text.strip():
                                     logger.info(f"[AGENT_RESPONSE] {block.text[:200]}{'...' if len(block.text) > 200 else ''}")
                                     log_agent_response(block.text)  # Comprehensive logging
+                                    add_simple_agent_response(block.text)  # Simple logging
                                 full_response += block.text
                             elif isinstance(block, ToolUseBlock):
                                 # Start comprehensive tool logging
@@ -199,10 +218,19 @@ Be thorough, objective, and provide detailed reasoning for all assessments."""
                                     # Log full input for other tools
                                     logger.info(f"[TOOL_INPUT] {block.input}")
 
+                                # Add simple logging for all tool starts (this was missing!)
+                                # This will create the step immediately when tool starts
+                                add_simple_tool_call(
+                                    block.name,
+                                    block.input,
+                                    # No output yet - will be updated when tool completes
+                                )
+
                                 tool_results.append({
                                     "tool": block.name,
                                     "input": block.input,
-                                    "tool_id": tool_id  # Track for completion logging
+                                    "tool_id": tool_id,  # Track for completion logging
+                                    "start_time": time.time()  # Track duration
                                 })
                             elif isinstance(block, ToolResultBlock):
                                 # Find the corresponding tool result for logging
@@ -212,22 +240,44 @@ Be thorough, objective, and provide detailed reasoning for all assessments."""
                                         matching_tool = tool_result
                                         break
 
+                                # Calculate duration
+                                duration_ms = None
+                                if matching_tool and "start_time" in matching_tool:
+                                    duration_ms = (time.time() - matching_tool["start_time"]) * 1000
+
                                 # Log tool completion or error
                                 if block.is_error:
                                     error_message = str(block.content)
                                     logger.error(f"[TOOL_ERROR] Tool execution failed: {error_message}")
                                     if matching_tool:
                                         log_tool_error(matching_tool["tool_id"], error_message)
+                                        # Add simple logging
+                                        add_simple_tool_call(
+                                            matching_tool["tool"],
+                                            matching_tool["input"],
+                                            error_message=error_message,
+                                            duration_ms=duration_ms
+                                        )
                                 else:
                                     result_preview = str(block.content)[:300] if block.content else "No content"
                                     logger.info(f"[TOOL_RESULT] Tool output: {result_preview}{'...' if len(str(block.content)) > 300 else ''}")
                                     if matching_tool:
                                         log_tool_complete(matching_tool["tool_id"], str(block.content))
+                                        # Add simple logging
+                                        add_simple_tool_call(
+                                            matching_tool["tool"],
+                                            matching_tool["input"],
+                                            output_result=str(block.content),
+                                            duration_ms=duration_ms
+                                        )
                     elif isinstance(message, ResultMessage):
                         logger.info(f"[RESULT] Analysis completed - Duration: {message.duration_ms}ms")
                         if message.is_error:
                             logger.error(f"[ANALYSIS_ERROR] Analysis failed: {message.result}")
                         break
+
+                # Update step progress
+                update_simple_step("Processing analysis results...", 4, 5)
 
                 # Parse and structure the results
                 analysis_result = await self._parse_agent_response(
@@ -243,8 +293,9 @@ Be thorough, objective, and provide detailed reasoning for all assessments."""
 
                 logger.info(f"[SUCCESS] Claude Code agent analysis completed in {analysis_result['processing_time']:.2f}s")
 
-                # End logging session with success
+                # End logging sessions
                 end_agent_session(final_result=analysis_result)
+                complete_simple_analysis(final_result=analysis_result)
 
                 return analysis_result
 
@@ -252,8 +303,9 @@ Be thorough, objective, and provide detailed reasoning for all assessments."""
             error_message = f"Agent analysis failed: {str(e)}"
             logger.error(f"[ERROR] Claude Code agent analysis failed: {str(e)}")
 
-            # End logging session with error
+            # End logging sessions with error
             end_agent_session(error_message=error_message)
+            complete_simple_analysis(error_message=error_message)
 
             return {
                 "error": error_message,
